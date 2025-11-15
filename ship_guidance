@@ -1,0 +1,957 @@
+COSMOGENESIS – `ship_guidance`
+(Authoritative Design – **Do Not Modify**)
+
+---
+
+## A. Meta-Rules for the LLM Coder
+
+1. **This `ship_guidance` is authoritative.**
+
+   * You **must not** edit, override, reinterpret, or “improve” this document.
+   * You **must not** generate alternate or supplemental guidance documents (e.g., `ship_guidance_v2`, `ship_notes`, `balance_ideas`, etc.).
+   * If anything seems ambiguous or missing, you must surface it as a comment/TODO in code and defer to the human designer.
+
+2. **Relationship to `game_guidance`.**
+
+   * This document extends and refines the high-level concepts from `game_guidance`.
+   * If there is any conflict, the human designer decides the resolution; you must not unilaterally choose.
+
+3. **No new ships, no removed ships.**
+
+   * You may not invent additional ship types, rename ships, or remove ships from this list.
+   * Balance tweaks (numbers) may only be done when explicitly requested by the human designer.
+
+---
+
+## B. Canonical Ship Fields & Conventions
+
+All ships in Cosmogenesis **must** use the following canonical fields (some are already defined in `game_guidance`):
+
+* **name** (string)
+* **class** (Strike / Escort / Line / Capital / Base)
+* **role** (short description: interceptor, brawler, artillery, etc.)
+* **lore_blurb** (very short 1–3 sentence lore/fiction snippet)
+* **resource_cost** (integer)
+* **build_time** (seconds, float or int)
+* **health** (HP pool)
+* **armor** (flat damage reduction or armor value used by combat formulas)
+* **shields** (shield HP pool)
+* **energy** (max energy pool for abilities, weapons, systems)
+* **energy_regen** (energy per second)
+* **flight_speed** (world units per second)
+* **visual_range** (world units)
+* **radar_range** (world units; must be ≥ visual_range)
+* **firing_range** (world units; the maximum distance that primary weapons can engage)
+* **weapon_damage** (base damage per shot or per cycle; details can be expanded later)
+* **design_notes_wireframe** (description of wireframe silhouette for the LLM coder)
+* **upgrade_hooks** (short notes about likely upgrade paths; do not implement new systems without explicit guidance)
+
+> **Scale Convention (guidance, not a hard law):**
+>
+> * Strike: cost ~800–1200, build_time ~15–25s, speed ~260–320
+> * Escort: cost ~4000–6000, build_time ~30–40s, speed ~200–260
+> * Line: cost ~9000–12000, build_time ~45–55s, speed ~150–200
+> * Capital: cost ~18000–23000, build_time ~70–85s, speed ~120–160
+> * Base: not built like normal ships; it is the starting structure, potentially upgradeable.
+
+Distances (visual, radar, firing range) can be roughly:
+
+* Strike: firing_range ~600–800
+* Escort: ~800–1000
+* Line: ~1100–1400
+* Capital: ~1300–1800
+* Base: ~1600–2000
+
+---
+
+## C. The Base – “ASTRAL CITADEL”
+
+The Base is a **space station / megastructure**, larger than any ship in the fleet. It anchors the player’s operations, harvests resources, and builds ships.
+
+### C.1 Base: Astral Citadel
+
+* **name:** Astral Citadel
+
+* **class:** Base
+
+* **role:** Core station / main base / production hub
+
+* **lore_blurb:**
+  The Astral Citadel is a modular fortress-station, assembled from prefabricated rings and spines. Every fleet’s story begins here, as the Citadel’s factories ignite and its mining arrays bite into the surrounding planetoids.
+
+* **resource_cost:** N/A (starting structure; later upgrades may have costs)
+
+* **build_time:** N/A (present at match start; expansions/upgrade modules will have their own times)
+
+* **health:** 40,000
+
+* **armor:** 400
+
+* **shields:** 20,000
+
+* **energy:** 10,000
+
+* **energy_regen:** 60 / second
+
+* **flight_speed:** 0 (stationary)
+
+* **visual_range:** 1400
+
+* **radar_range:** 2000
+
+* **firing_range:** 1800 (defense batteries)
+
+* **weapon_damage:** 250 per defense volley (balanced later; treat as moderate base defense, not a battleship)
+
+* **Capabilities (Conceptual):**
+
+  * **Resource Harvesting:**
+
+    * Hosts mining arrays that connect to nearby planetoids and asteroids.
+    * Acts as the central node for resource accounting.
+  * **Ship Production:**
+
+    * Maintains multiple **build queues** for Strike, Escort, and later Line & Capital ships (once upgraded).
+  * **Defenses:**
+
+    * Basic integrated turrets with modest firing rate and decent range.
+    * Defense strength can be upgraded over time (more damage, more range, improved shields).
+  * **Upgrade Modules:**
+
+    * Future upgrades may unlock:
+
+      * Capital ship production
+      * Advanced ship upgrades
+      * Improved radar, larger vision
+      * Additional mining throughput
+
+* **design_notes_wireframe:**
+
+  * The Astral Citadel is a **large, layered wireframe structure**:
+
+    * **Central Core:**
+
+      * A large hexagonal or octagonal prism outline, drawn as concentric hex/octal rings stacked along a short vertical axis.
+      * Internal cross-bracing lines connecting opposite vertices, giving a “lattice core” look.
+    * **Outer Rings:**
+
+      * At least two large circular or hexagonal rings orbiting the core in the same plane (like a compact orbital torus).
+      * The outer rings are connected to the core via straight, evenly spaced spokes (4–6 spokes).
+    * **Docking Arms:**
+
+      * 3–4 radial “arms” extending outward as long rectangular frameworks with diagonal crossbars.
+      * Ships spawn at the open ends of these arms.
+    * **Upgrade Attachments (for future visuals):**
+
+      * Reserved “attachment points” at the tips of docking arms and on outer rings where additional small ring segments or spires can be drawn when upgrades are purchased.
+      * These should be simple add-on wireframe shapes: small vertical towers, extra mini-rings, or antenna-like trusses.
+
+* **upgrade_hooks:**
+
+  * **Mining Superstructure:** extra outer ring with added radial lines → improves resource income.
+  * **Fleet Foundry Module:** new rectangular gantry attached to one arm → unlocks Line/Capital ship production.
+  * **Aegis Array:** added vertical spires or “halo” ring above and below → improves shields and radar.
+  * All visual changes must be additive (no removing core geometry), to preserve recognition.
+
+---
+
+## D. STRIKE CLASS SHIPS
+
+Strike ships are **small, fast, and fragile**, used for scouting, interception, and harassment.
+
+### D.1 “SPEARLING” Interceptor
+
+* **name:** Spearling
+
+* **class:** Strike
+
+* **role:** High-speed interceptor
+
+* **lore_blurb:**
+  Spearlings are the first through the breach and the first to die. Pilots claim that if you can survive ten sorties in a Spearling, the rest of the war feels slow.
+
+* **resource_cost:** 1000
+
+* **build_time:** 20 s
+
+* **health:** 600
+
+* **armor:** 40
+
+* **shields:** 300
+
+* **energy:** 300
+
+* **energy_regen:** 8 / s
+
+* **flight_speed:** 310
+
+* **visual_range:** 800
+
+* **radar_range:** 1100
+
+* **firing_range:** 700
+
+* **weapon_damage:** 45 per burst (rapid-fire light cannons)
+
+* **strategic_role:**
+
+  * Chases down enemy Strikes.
+  * Excellent early-game scouts.
+  * Good at picking off unescorted mining vessels or lightly defended positions.
+
+* **design_notes_wireframe:**
+
+  * Overall silhouette: **slender arrowhead**.
+  * Geometry:
+
+    * A narrow **V-shaped prow** pointing forward.
+
+      * Two lines forming a V, meeting at the nose.
+    * Short, swept-back **wings** starting mid-body:
+
+      * Each wing is a straight segment angled backward ~30–40 degrees.
+    * Central spine line from nose to tail.
+    * Tiny forked tail:
+
+      * Two short lines flaring slightly outward from the rear.
+  * Total vertex count should be low (think ~8–10 key points, connected with minimal segments).
+
+* **upgrade_hooks:**
+
+  * **Afterburners:** temporary speed boost (consumes energy).
+  * **Targeting Suite:** slightly increases firing_range and visual_range.
+  * **Light Armor Plating:** modest armor/health bump.
+
+---
+
+### D.2 “WISP” Recon Craft
+
+* **name:** Wisp
+
+* **class:** Strike
+
+* **role:** Long-range recon / sensor craft
+
+* **lore_blurb:**
+  Wisps are infamous among captains: by the time you see one, it has already mapped your entire fleet and vanished into the dark.
+
+* **resource_cost:** 900
+
+* **build_time:** 18 s
+
+* **health:** 450
+
+* **armor:** 25
+
+* **shields:** 250
+
+* **energy:** 400
+
+* **energy_regen:** 10 / s
+
+* **flight_speed:** 300
+
+* **visual_range:** 1000
+
+* **radar_range:** 1500
+
+* **firing_range:** 600
+
+* **weapon_damage:** 30 per shot (weak single-beam)
+
+* **strategic_role:**
+
+  * Primary early-game **exploration unit**.
+  * Provides extended radar coverage and vision.
+  * Avoids direct combat; meant to kite and escape.
+
+* **design_notes_wireframe:**
+
+  * Overall silhouette: **long needle with sensor vanes**.
+  * Geometry:
+
+    * Long central line (needle shape) from nose to tail.
+    * Small **sensor “antennae”**:
+
+      * Two tiny perpendicular lines near the nose (like a T-shape).
+    * Minimal wings:
+
+      * Very short, straight stubs mid-body.
+    * Slightly bulbous mid-section:
+
+      * Represented by a small diamond shape around the center of the spine (4 points connected in a rhombus).
+  * Emphasize its “delicate” and “techy” feel compared to the more aggressive Spearling.
+
+* **upgrade_hooks:**
+
+  * **Enhanced Sensors:** increases radar_range significantly, small visual_range boost.
+  * **Ghost Drive:** short-duration stealth (harder to detect on radar).
+  * **Data Link:** boosts allied radar_range when nearby (aura-type upgrade).
+
+---
+
+### D.3 “DAGGERWING” Raider
+
+* **name:** Daggerwing
+
+* **class:** Strike
+
+* **role:** Hit-and-run raider
+
+* **lore_blurb:**
+  Daggerwings earned their name from the way they slice across a front line, leaving only debris where logistics ships used to be.
+
+* **resource_cost:** 1200
+
+* **build_time:** 22 s
+
+* **health:** 700
+
+* **armor:** 55
+
+* **shields:** 350
+
+* **energy:** 350
+
+* **energy_regen:** 8 / s
+
+* **flight_speed:** 290
+
+* **visual_range:** 850
+
+* **radar_range:** 1150
+
+* **firing_range:** 750
+
+* **weapon_damage:** 60 per pass (hard-hitting but slower firing)
+
+* **strategic_role:**
+
+  * Designed for **harassment of miners and isolated structures**.
+  * Stronger offensive punch than Spearling but slightly slower.
+  * Works best in small packs.
+
+* **design_notes_wireframe:**
+
+  * Overall silhouette: **broad “bat-wing” delta**.
+  * Geometry:
+
+    * Triangular main body:
+
+      * Nose to wide rear edge, forming a shallow triangle.
+    * Two **notches** at the rear:
+
+      * Rear edge is broken into three segments, forming a small inward notch near center to imply engine placement.
+    * Light internal lines:
+
+      * One central line from nose to rear notch.
+      * Two diagonal lines from nose toward each rear wingtip.
+  * Slightly wider and more intimidating than Spearling.
+
+* **upgrade_hooks:**
+
+  * **Pulsed Overcharger:** increases weapon_damage for a short duration.
+  * **Reinforced Wing Struts:** modest boost to health/armor.
+  * **Raider Doctrine:** reduced aggro when attacking structures (AI behavior hook).
+
+---
+
+## E. ESCORT CLASS SHIPS
+
+Escorts are **medium-sized backbone vessels**, slower than Strikes but tougher and more heavily armed.
+
+### E.1 “WARDEN” Defense Frigate
+
+* **name:** Warden
+
+* **class:** Escort
+
+* **role:** Point-defense & escort
+
+* **lore_blurb:**
+  Wardens were originally designed to guard civilian convoys. In wartime, they form a living shield wall around vulnerable capitals and stations.
+
+* **resource_cost:** 4800
+
+* **build_time:** 34 s
+
+* **health:** 3200
+
+* **armor:** 160
+
+* **shields:** 2200
+
+* **energy:** 1200
+
+* **energy_regen:** 20 / s
+
+* **flight_speed:** 230
+
+* **visual_range:** 900
+
+* **radar_range:** 1300
+
+* **firing_range:** 900
+
+* **weapon_damage:** 95 per cycle (multi-turret PD / medium guns)
+
+* **strategic_role:**
+
+  * Protects larger ships from Strike-class and torpedoes (when such are added).
+  * Effective in mid-range brawls.
+  * Sits between frontline and rear artillery.
+
+* **design_notes_wireframe:**
+
+  * Overall silhouette: **compact block with turrets**.
+  * Geometry:
+
+    * Rectangular central hull:
+
+      * Long rectangle, slightly wider than Strike ships, with rounded corners approximated by short angled segments.
+    * Two **stubby side sponsons**:
+
+      * Small rectangular protrusions mid-length on both sides.
+    * Top profile turret hints:
+
+      * Small square or diamond outlines near front and rear of the hull, connected with short vertical lines down to the hull edge (abstract turrets).
+    * A central keel line from nose to tail.
+  * Shape should read as "sturdy and utilitarian".
+
+* **upgrade_hooks:**
+
+  * **Point Defense Array:** bonus vs small ships at close range.
+  * **Bulwark Shields:** significantly increased shields at cost of speed.
+  * **Escort Formation AI:** synergistic bonuses when multiple Wardens are close.
+
+---
+
+### E.2 “SUNLANCE” Assault Frigate
+
+* **name:** Sunlance
+
+* **class:** Escort
+
+* **role:** Assault / general-purpose combatant
+
+* **lore_blurb:**
+  Sunlances earned their reputation burning through pirate flotillas. Their beam arrays were never meant for subtlety.
+
+* **resource_cost:** 5200
+
+* **build_time:** 36 s
+
+* **health:** 3000
+
+* **armor:** 140
+
+* **shields:** 2400
+
+* **energy:** 1500
+
+* **energy_regen:** 22 / s
+
+* **flight_speed:** 240
+
+* **visual_range:** 950
+
+* **radar_range:** 1350
+
+* **firing_range:** 1000
+
+* **weapon_damage:** 130 per beam cycle (hard-hitting beams)
+
+* **strategic_role:**
+
+  * Mainline assault Escort.
+  * Stronger range and damage; excels at chewing through Line ships over time.
+  * Slightly more offensive than Warden.
+
+* **design_notes_wireframe:**
+
+  * Overall silhouette: **sleek wedge with gun spines**.
+  * Geometry:
+
+    * Long isosceles triangle hull (wedge).
+    * Parallel **beam spines**:
+
+      * Two or three thin lines running along the hull from nose toward rear, slightly raised above hull using tiny vertical segments.
+    * Rear section:
+
+      * Slight notch or “V” at the back to suggest engine cluster.
+    * Optional small “fin”:
+
+      * A short line upward at the center-rear to hint at a dorsal fin/radar mast.
+  * Looks more aggressive and elongated than Warden.
+
+* **upgrade_hooks:**
+
+  * **Focused Lances:** increased weapon_damage but narrower firing arc (AI behavior/turret logic).
+  * **Flux Sinks:** improved energy_regen.
+  * **Adaptive Plating:** moderate boosts to health and armor.
+
+---
+
+### E.3 “AURIC VEIL” Support Corvette
+
+* **name:** Auric Veil
+
+* **class:** Escort
+
+* **role:** Support / shield extender
+
+* **lore_blurb:**
+  Auric Veils are named for the shimmering fields they cast across allied hulls. Fleet commanders fight over who gets the few they can afford.
+
+* **resource_cost:** 5500
+
+* **build_time:** 38 s
+
+* **health:** 2600
+
+* **armor:** 120
+
+* **shields:** 3200
+
+* **energy:** 2000
+
+* **energy_regen:** 28 / s
+
+* **flight_speed:** 220
+
+* **visual_range:** 900
+
+* **radar_range:** 1400
+
+* **firing_range:** 850
+
+* **weapon_damage:** 75 per cycle (modest gun arrays)
+
+* **strategic_role:**
+
+  * Primarily a **support ship**: strong shields and energy pool.
+  * Can project shield support (when such ability is implemented) to nearby allies.
+  * Less damaging than Sunlance but turns formations into tanks.
+
+* **design_notes_wireframe:**
+
+  * Overall silhouette: **lozenge with halo rings**.
+  * Geometry:
+
+    * Central **diamond/lozenge hull**:
+
+      * Four-point diamond (nose, left, tail, right) connected by straight lines.
+    * **Halo-like partial ring**:
+
+      * A thin semicircular arc drawn above and below the hull, not fully closed; implies field projectors.
+    * Short radial lines connecting hull vertices to the halo arc (4–6 spokes).
+  * This should visually differentiate it as “aura/support” rather than pure combat.
+
+* **upgrade_hooks:**
+
+  * **Shield Projectors:** aura that increases allied shields in a radius.
+  * **Capacitor Banks:** higher energy and energy_regen.
+  * **Harmonic Field:** small damage reduction to allies in range.
+
+---
+
+## F. LINE CLASS SHIPS
+
+Line ships are **large bruisers**: slow, tough, and central to mid-late game fleet engagements.
+
+### F.1 “IRON HALBERD” Line Cruiser
+
+* **name:** Iron Halberd
+
+* **class:** Line
+
+* **role:** Frontline brawler
+
+* **lore_blurb:**
+  The Iron Halberd is an old design that refuses to die, much like the captains who favor it. When it appears on the field, everyone knows the brawl has truly begun.
+
+* **resource_cost:** 10,000
+
+* **build_time:** 50 s
+
+* **health:** 8500
+
+* **armor:** 320
+
+* **shields:** 5200
+
+* **energy:** 2800
+
+* **energy_regen:** 30 / s
+
+* **flight_speed:** 180
+
+* **visual_range:** 1100
+
+* **radar_range:** 1500
+
+* **firing_range:** 1300
+
+* **weapon_damage:** 230 per volley (heavy batteries)
+
+* **strategic_role:**
+
+  * Anchors the line of battle.
+  * Absorbs incoming fire while steadily returning heavy fire.
+  * Works best in a line with other Line and Escort ships.
+
+* **design_notes_wireframe:**
+
+  * Overall silhouette: **long bar with forward axe-head**.
+  * Geometry:
+
+    * Long rectangular hull (spine).
+    * At the front: a **halberd “axe-head”**:
+
+      * A wedge shape that flares out slightly, connected back to the main rectangle by diagonal lines.
+    * Side armor “plates”:
+
+      * Small overlapping trapezoids along the sides, represented by 2–3 staggered line segments each side.
+    * Engine cluster:
+
+      * Three short parallel lines at the rear for engine nozzles.
+  * Emphasize “mass” and solidity with big, straight segments.
+
+* **upgrade_hooks:**
+
+  * **Reinforced Ram:** increased damage when closing to very close range (if ramming mechanic is later added).
+  * **Citadel Armor:** large armor boost, speed penalty.
+  * **Siege Batteries:** increased firing_range and weapon_damage, slower fire rate.
+
+---
+
+### F.2 “STAR FORTRESS” Heavy Cruiser
+
+* **name:** Star Fortress
+
+* **class:** Line
+
+* **role:** Defensive anchor / area denial
+
+* **lore_blurb:**
+  The Star Fortress is less a ship and more a mobile wall. When it digs in, sectors change hands around it.
+
+* **resource_cost:** 11,000
+
+* **build_time:** 52 s
+
+* **health:** 9500
+
+* **armor:** 350
+
+* **shields:** 6000
+
+* **energy:** 2600
+
+* **energy_regen:** 26 / s
+
+* **flight_speed:** 160
+
+* **visual_range:** 1050
+
+* **radar_range:** 1550
+
+* **firing_range:** 1250
+
+* **weapon_damage:** 210 per cycle (multiple turrets, somewhat distributed)
+
+* **strategic_role:**
+
+  * Defends chokepoints and bases.
+  * Ideal for “holding ground” while faster units maneuver.
+  * Trades a bit of mobility and offense for extreme toughness.
+
+* **design_notes_wireframe:**
+
+  * Overall silhouette: **blocky cross with turret nubs**.
+  * Geometry:
+
+    * Central square or short rectangle as the core.
+    * Four stubby arms extending up/down/left/right from the core (cross shape).
+    * At each arm’s end, small square outlines suggesting turrets.
+    * Internal cross-bracing lines inside the core (like a plus sign or X).
+  * Should look like a small, mobile version of the Astral Citadel’s architecture.
+
+* **upgrade_hooks:**
+
+  * **Entrench Mode:** reduced speed, increased armor and firing_range when stationary.
+  * **Bastion Shields:** temporary massive shield bonus.
+  * **Control Grid:** improved radar_range and perhaps command auras.
+
+---
+
+### F.3 “LANCE OF DAWN” Beam Cruiser
+
+* **name:** Lance of Dawn
+
+* **class:** Line
+
+* **role:** Long-range beam artillery
+
+* **lore_blurb:**
+  When the Lance of Dawn fires, fleets hundreds of kilometers away see the flash and pray it isn’t aimed at them.
+
+* **resource_cost:** 10,500
+
+* **build_time:** 50 s
+
+* **health:** 7800
+
+* **armor:** 280
+
+* **shields:** 5000
+
+* **energy:** 3400
+
+* **energy_regen:** 34 / s
+
+* **flight_speed:** 175
+
+* **visual_range:** 1200
+
+* **radar_range:** 1700
+
+* **firing_range:** 1450
+
+* **weapon_damage:** 300 per beam cycle (high alpha, slower cycle)
+
+* **strategic_role:**
+
+  * Provides **long-range fire support**.
+  * Best placed behind tougher Line/Capital ships.
+  * Vulnerable to flanking Strikes.
+
+* **design_notes_wireframe:**
+
+  * Overall silhouette: **long spear with beam projector**.
+  * Geometry:
+
+    * Over-extended spine line from nose to tail (longer than Iron Halberd).
+    * At the nose: small circular or hexagonal “projector ring” (approximated by a simple polygon).
+    * A pair of thin stabilizer fins:
+
+      * Angled lines near midsection, pointing slightly outward and backward.
+    * Engine cluster similar to Iron Halberd but slightly slimmer.
+  * Must visually communicate “this is a gun pointed at something very far away.”
+
+* **upgrade_hooks:**
+
+  * **Coherent Lattice:** increases firing_range and weapon_damage.
+  * **Focus Crystals:** allows a charged shot (higher damage burst on cooldown).
+  * **Sensor Sync:** synergy with recon ships, improved accuracy vs distant targets.
+
+---
+
+## G. CAPITAL CLASS SHIPS
+
+Capitals are **flagships**: extremely large, slow, and powerful. They shape battles by their mere presence.
+
+### G.1 “TITAN’S WARD” Command Dreadnought
+
+* **name:** Titan’s Ward
+
+* **class:** Capital
+
+* **role:** Command ship / super-heavy brawler
+
+* **lore_blurb:**
+  Titan’s Wards are named not for any mythical giant, but for the worlds they’ve been credited with saving—or breaking.
+
+* **resource_cost:** 20,000
+
+* **build_time:** 75 s
+
+* **health:** 18,000
+
+* **armor:** 500
+
+* **shields:** 12,000
+
+* **energy:** 6000
+
+* **energy_regen:** 40 / s
+
+* **flight_speed:** 140
+
+* **visual_range:** 1300
+
+* **radar_range:** 1900
+
+* **firing_range:** 1600
+
+* **weapon_damage:** 420 per volley (multiple heavy batteries firing in concert)
+
+* **strategic_role:**
+
+  * Acts as a **command centerpiece** and super-heavy anchor.
+  * Capable of soaking extreme damage and returning it.
+  * Encourages fighting around it due to possible command auras and morale effects (if later implemented).
+
+* **design_notes_wireframe:**
+
+  * Overall silhouette: **massive layered barge**.
+  * Geometry:
+
+    * Three stacked rectangular “decks”:
+
+      * Drawn as three overlapping rectangles, slightly offset vertically or laterally for depth.
+    * Several **turret ridges**:
+
+      * Short rectangular bumps on the top outline with small diagonal lines for detail.
+    * A central dorsal spine line with occasional vertical “antenna” segments.
+    * Large engine block at rear:
+
+      * Wide rectangular section with 3–5 short parallel engine lines.
+  * Must look clearly larger than any Line ship; fill more screen space, but still simple.
+
+* **upgrade_hooks:**
+
+  * **Command Nexus:** increased radar_range, improved allied stats within a radius.
+  * **Titanic Armor:** further armor and health increases.
+  * **Divine Batteries:** improved weapon_damage and possibly splash damage.
+
+---
+
+### G.2 “ABYSSAL CROWN” Siege Carrier
+
+* **name:** Abyssal Crown
+
+* **class:** Capital
+
+* **role:** Siege & strikecraft support (future strikecraft systems can attach here)
+
+* **lore_blurb:**
+  The Abyssal Crown carries enough hangar space to blot out stars. Its presence above a world usually marks the end of negotiations.
+
+* **resource_cost:** 21,500
+
+* **build_time:** 80 s
+
+* **health:** 16,000
+
+* **armor:** 420
+
+* **shields:** 14,000
+
+* **energy:** 7000
+
+* **energy_regen:** 46 / s
+
+* **flight_speed:** 130
+
+* **visual_range:** 1350
+
+* **radar_range:** 2000
+
+* **firing_range:** 1700
+
+* **weapon_damage:** 350 per cycle (medium/heavy guns; later can be combined with strikecraft damage sources)
+
+* **strategic_role:**
+
+  * Long-range siege ship and potential strikecraft carrier.
+  * Focused more on **projecting power** than direct brawling.
+  * Devastating when protected and allowed to maintain range.
+
+* **design_notes_wireframe:**
+
+  * Overall silhouette: **crowned ring with elongated hull**.
+  * Geometry:
+
+    * Central elongated hull (similar to a long oval or stretched diamond).
+    * Around the midsection: a **broken ring “crown”**:
+
+      * Several short arc segments arranged in a near-circle, not fully closed, connected to the hull with short spokes.
+    * Hangar bay outlines:
+
+      * Rectangular “cut-outs” on left and right sides (simple inward notches).
+    * Forward siege projector:
+
+      * Simple hexagonal or triangular projector at the nose, smaller than Lance of Dawn’s but clearly visible.
+  * Should appear somewhat “regal” and complex while staying low-poly.
+
+* **upgrade_hooks:**
+
+  * **Expanded Hangars:** increased capacity for future strikecraft systems.
+  * **Siege Arrays:** improved firing_range and damage vs structures.
+  * **Crown Shielding:** powerful, but slow-recharging, directional shield.
+
+---
+
+### G.3 “OBLIVION SPIRE” Doomsday Battleship
+
+* **name:** Oblivion Spire
+
+* **class:** Capital
+
+* **role:** Doomsday gun platform
+
+* **lore_blurb:**
+  Legend says only three Oblivion Spires were ever completed, and that each one left a trail of dead sectors behind it.
+
+* **resource_cost:** 23,000
+
+* **build_time:** 85 s
+
+* **health:** 17,500
+
+* **armor:** 480
+
+* **shields:** 13,000
+
+* **energy:** 8000
+
+* **energy_regen:** 50 / s
+
+* **flight_speed:** 120
+
+* **visual_range:** 1400
+
+* **radar_range:** 2100
+
+* **firing_range:** 1850
+
+* **weapon_damage:** 600 per heavy shot (very slow cycle, doomsday-style gun)
+
+* **strategic_role:**
+
+  * A dedicated **siege and fleet-killer** unit.
+  * Extremely powerful single-target or small AoE shots.
+  * Vulnerable to concentrated Strike harassment if not screened.
+
+* **design_notes_wireframe:**
+
+  * Overall silhouette: **vertical spire over a narrow hull**.
+  * Geometry:
+
+    * Long, narrow main hull (spine).
+    * A tall vertical **spire** rising from the center:
+
+      * Drawn as a narrow triangle or tapering rectangle extending “upward” (screen-space) from hull.
+    * At the spire’s tip: small open-frame cage (square or diamond) representing the doomsday emitter.
+    * Minimal side fins; most mass is in hull + spire to emphasize its bizarre shape.
+  * Should look unique among capitals and slightly ominous.
+
+* **upgrade_hooks:**
+
+  * **Oblivion Charge:** allows charged shots with massive damage.
+  * **Spire Stabilizers:** reduces recoil/inaccuracy (mechanic if implemented).
+  * **Void Capacitors:** larger energy pool and regen for sustained firing.
+
+---
+
+## H. Final Reminder to the LLM Coder
+
+* You **must not** modify this `ship_guidance` document or create new guidance documents.
+* You **must not** add, remove, or rename ships without explicit direction from the human designer.
+* All implementations of ship stats, behaviors, and wireframe designs must follow these specifications as closely as technically feasible.
+* Any uncertainty should be handled by:
+
+  1. Choosing the simplest implementation that respects this document and `game_guidance`, and
+  2. Leaving a clear comment/TODO for the human designer.
