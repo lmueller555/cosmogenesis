@@ -1,1 +1,485 @@
+COSMOGENESIS – `game_guidance`
+(Authoritative Design – **Do Not Modify**)
 
+---
+
+## A. Meta-Rules for the LLM Coder
+
+1. **This `game_guidance` document is authoritative.**
+
+   * You **must not** edit, override, reinterpret, or “improve” this document.
+   * You **must not** generate alternate or supplemental guidance documents (e.g., “game_guidance_v2”, “design_notes”, etc.).
+   * If you believe something is missing or ambiguous, you should surface it as a TODO or comment in the code and defer to the human designer rather than inventing new rules.
+
+2. **Ship details are defined elsewhere.**
+
+   * This document only defines ships at a high, conceptual level.
+   * All **specific** ship stats, special abilities, and variants will be defined in **`ship_guidance`**, which is also authoritative and must not be altered or replaced.
+
+3. **No new major systems without explicit instructions.**
+
+   * You may refactor code for clarity, performance, and maintainability.
+   * You may not introduce entirely new game mechanics (economy types, extra resources, new unit classes, etc.) that change core gameplay without explicit human direction.
+
+---
+
+## B. High-Level Vision
+
+**Cosmogenesis** is an Atari-style **wireframe real-time strategy (RTS)** game in Python using Pygame for windowing/input and **GPU-accelerated OpenGL** for rendering.
+
+**Core fantasy:**
+
+* You command a large **flagship/base ship** in deep space, anchored to a planetoid in a vast, hostile sector.
+* You mine nearby **planetoids** and **asteroids** for resources.
+* You build additional bases, expand your resource network, and construct a fleet of ships.
+* You maneuver your fleet, set waypoints, and wage war across the sector.
+* The goal is to **destroy the opposing team’s bases** while defending your own.
+
+**Tone & style:**
+
+* Retro, minimalist **Atari wireframe** look: thin lines, black background, simple shapes.
+* Small, simple unit silhouettes focused on **clarity and performance**.
+* Interface leans toward clean, minimalist RTS UI.
+
+---
+
+## C. Technology & Rendering
+
+1. **Language & Frameworks**
+
+   * Primary language: **Python**.
+   * Input/windowing/audio/UI: **Pygame**.
+   * **Rendering of game world (ships, bases, planetoids, asteroids, projectiles, etc.) must be done on the GPU using OpenGL.**
+
+     * Use an OpenGL wrapper (e.g., PyOpenGL or a similar OpenGL integration) to achieve **hardware-accelerated wireframe rendering**.
+     * Pygame is used mainly to create the window/context and handle events; heavy drawing must be via OpenGL.
+
+2. **Rendering Style**
+
+   * **Wireframes only.**
+
+     * Objects are built from line segments (edges) forming simple geometric silhouettes.
+     * No filled polygons, textures, or shading beyond simple line drawing.
+   * Scene is mostly **2D top-down or slightly angled 2.5D**, but with a consistent, easily readable projection.
+
+     * The exact camera angle can be chosen once and then kept consistent. LLM coder must not change the camera paradigm without explicit instructions.
+
+3. **Performance Goals**
+
+   * Designed to handle **many small ships** simultaneously (potentially dozens to hundreds) without frame drops.
+   * Target frame rate: **at least 60 FPS** on a typical modern machine.
+   * Simplify geometry:
+
+     * Keep vertex counts low.
+     * Favor simple primitives (triangles, rectangles, wedges, simple “V” shapes) over complex models.
+
+---
+
+## D. Core Game Loop
+
+At a conceptual level, a “match” of Cosmogenesis follows this loop:
+
+1. **Early Game:**
+
+   * Player starts with:
+
+     * A main **base ship** anchored near a starting planetoid.
+     * Basic resource extraction from that planetoid and perhaps a few nearby asteroids.
+   * Player learns the controls, begins mining, and constructs their first few **Strike** ships.
+
+2. **Expansion:**
+
+   * Player explores the **sector**, revealing terrain through **fog of war**.
+   * Player identifies **additional planetoids** and moves base ships / construction ships to establish **new bases** near those planetoids.
+   * Resource income ramps up as more bases are constructed.
+
+3. **Fleet Building:**
+
+   * Player invests resources into building ships of increasing size and strength:
+
+     * **Strike → Escort → Line → Capital**
+   * Player configures build queues at their bases and sequences ship production based on strategic needs.
+
+4. **Skirmishing & Map Control:**
+
+   * Strike groups scout and harass enemy operations.
+   * Escort and Line ships provide sustained firepower in contested areas.
+   * Player uses **waypoint-based movement** to maneuver fleets efficiently through the large sector.
+
+5. **Late Game & Victory:**
+
+   * Player organizes large fleets led by Capital ships.
+   * Strategic goal: **destroy the enemy’s bases and flagship(s)**.
+   * Game ends when all core bases (and possibly core production structures/bases as defined later) of a team are destroyed.
+
+---
+
+## E. World & Environment
+
+1. **Sector**
+
+   * A **single, large space “sector”** acts as the battlefield.
+   * The map is significantly larger than the screen’s visible area; the camera pans as needed.
+   * Coordinates and distances should be based on a consistent in-game unit system (e.g., abstract world units).
+
+2. **Planetoids**
+
+   * Large celestial bodies used as **primary mining sites**.
+   * Bases are constructed **near** them.
+   * Each planetoid has:
+
+     * A **resource capacity or yield rate** (high compared to asteroids).
+     * A physical position in space (important for pathfinding, building positions, and visual reference).
+
+3. **Asteroids**
+
+   * Smaller celestial objects scattered around the sector.
+   * Provide **small amounts of resources** compared to planetoids.
+   * Used for early game boosts or supplementary income.
+
+4. **Bases**
+
+   * Represent a combination of:
+
+     * The big **base ship** docked in or near a planetoid.
+     * The surrounding infrastructure for mining and ship production.
+   * Each base:
+
+     * Has a specific location (often anchored near a planetoid).
+     * Has a **build queue** system for ships.
+     * Links to nearby resource nodes (planetoid + local asteroids) for mining.
+
+---
+
+## F. Economy & Resources
+
+1. **Resources**
+
+   * There is at least one core **resource** used for:
+
+     * Ship construction
+     * Base expansion
+     * Upgrades (stats and abilities)
+   * For now, treat this as a **single generic resource** (e.g., “Resources”) to avoid overcomplication.
+
+     * Naming and additional resource types can be defined later; LLM coder must not invent extra resource types without explicit guidance.
+
+2. **Resource Acquisition**
+
+   * **Planetoids**:
+
+     * Main source of income.
+     * Require a base (or equivalent structure) nearby to harvest efficiently.
+   * **Asteroids**:
+
+     * Provide smaller, supplemental trickles of resources.
+     * May be accessed via small mining units or by extending base influence (implementation detail can be refined later).
+
+3. **Resource Flow**
+
+   * Resources accumulate over time as mines operate.
+   * Player spends resources on:
+
+     * **Ship production**.
+     * Potential **upgrades** (research, hull improvements, etc.).
+     * Building or upgrading **bases** (e.g., expanding capacity).
+
+---
+
+## G. Fleet & Units (High-Level Only)
+
+> **Important:** Specific stats, variants, and abilities go into `ship_guidance`. This section defines only conceptual roles and shared properties.
+
+1. **Common Ship Properties**
+   Each ship type, regardless of class, has the following stats (at least):
+
+   * **Resource cost** (build cost)
+   * **Build time**
+   * **Health** (HP)
+   * **Armor**
+   * **Shields**
+   * **Energy**
+   * **Flight speed**
+   * **Visual range**
+   * **Radar range**
+   * **Weapon damage** (and possibly related weapon parameters, defined later in `ship_guidance`)
+
+   Ships can be **upgraded** to improve these stats and to gain new abilities or passive properties.
+
+2. **Ship Size Classes**
+
+   * **Strike Ships (Small, Fast)**
+
+     * Role: Scouts, skirmishers, harassment.
+     * Characteristics:
+
+       * Very fast movement speed.
+       * Low cost, low durability.
+       * Quick build times, allowing rapid production.
+       * Simple wireframe silhouettes (e.g., small arrow/“V” shapes).
+     * Example (from design):
+
+       * Cost: ~1000 resources
+       * Build time: ~20 seconds
+
+   * **Escort Ships (Medium)**
+
+     * Role: Line support, screening, moderate firepower.
+     * Characteristics:
+
+       * Medium cost and durability.
+       * Slower than Strikes, faster than Line/Capital.
+       * Moderate build times.
+       * Act as backbone units in early-mid game skirmishes.
+     * Example:
+
+       * Cost: ~5000 resources
+       * Build time: ~35 seconds
+
+   * **Line Ships (Large)**
+
+     * Role: Heavy front-line combat ships.
+     * Characteristics:
+
+       * High cost and high durability.
+       * Strong weapon damage.
+       * Slow movement; more strategic than tactical.
+       * Form the core of mid-late game fleets.
+     * Example:
+
+       * Cost: ~10000 resources
+       * Build time: ~50 seconds
+
+   * **Capital Ships (Very Large)**
+
+     * Role: Flagships, command ships, super-heavy units.
+     * Characteristics:
+
+       * Very high cost and very long build time.
+       * Extremely durable with strong damage output and/or strong auras/abilities.
+       * Slow but decisive.
+     * Example:
+
+       * Cost: ~20000 resources
+       * Build time: ~75 seconds
+
+3. **Ship Variants**
+
+   * There will be **multiple ships per class**, each with distinct strategic properties:
+
+     * Some may have stronger shields, others better speed, others special weapon patterns, etc.
+   * These differences will be fully specified in the `ship_guidance` document.
+   * LLM coder must not “invent” new variants or abilities beyond what `ship_guidance` defines.
+
+4. **Upgrades**
+
+   * Ships can be upgraded (globally or per-ship-type) to increase:
+
+     * Health, armor, shields
+     * Damage
+     * Speed
+     * Visual/radar range
+     * Energy capacity or regeneration
+   * Upgrades may unlock new **abilities** or passive effects (defined in `ship_guidance` or a future `upgrade_guidance`, if created by the human designer).
+
+---
+
+## H. Fog of War, Vision, and Radar
+
+1. **Fog of War**
+
+   * The sector is initially **hidden** except for a region around the player’s starting base and units.
+   * Areas become **revealed** as ships move through them.
+   * Once revealed, areas might:
+
+     * Stay visible but without current enemy unit information (classic “grayed out” memory), OR
+     * Become fully hidden again (exact behavior can be specified later; do not assume beyond what is implemented).
+
+2. **Visual Range**
+
+   * Each ship has a **visual range radius** within which:
+
+     * Enemy units and structures are fully visible.
+     * Objects in visual range break fog of war locally.
+   * Base ships and bases also have their own visual range.
+
+3. **Radar Range**
+
+   * Separate from visual range.
+   * Each ship and base has a **radar range** within which:
+
+     * Enemy ships may be detected as **blips** or simplified markers.
+     * Radar can detect across fog of war, but with **reduced information** (e.g., no exact ship type, just “unknown contact”).
+   * Radar is primarily used for:
+
+     * Situational awareness.
+     * Early warning of incoming fleets.
+
+4. **UI Integration**
+
+   * Radar information should appear on:
+
+     * A **mini-map** or overview display.
+     * Possibly as additional HUD elements around the main view.
+
+---
+
+## I. Controls & User Interface
+
+1. **Unit Selection**
+
+   * Player can **select ships** by:
+
+     * Clicking on individual ships.
+     * Drag-selecting a group of ships (standard RTS selection box).
+   * Selected ships are highlighted clearly.
+
+2. **Movement & Waypoints**
+
+   * Primary movement interaction:
+
+     * Player selects one or more ships.
+     * Player clicks on a point in space → ships set a waypoint and move there automatically.
+   * **Waypoints system:**
+
+     * Ships follow a path from their current position to the target waypoint.
+     * The game should support chaining multiple waypoints (e.g., Shift-click) if we choose to implement it; at a minimum, one active waypoint per move command.
+     * When a new move command is issued, previous waypoints are cleared unless explicit multi-waypoint mode is used (if implemented).
+
+3. **Camera Control**
+
+   * Camera can:
+
+     * Pan across the large sector using keyboard and/or mouse methods (e.g., edge scroll, WASD keys).
+   * Zoom behavior may be added later but is not required at the outset; if added, it must preserve clear readability of small wireframe ships.
+
+4. **HUD / UI Elements**
+
+   * At minimum:
+
+     * Resource counter(s).
+     * Selected unit panel showing:
+
+       * Ship class (Strike/Escort/Line/Capital).
+       * Core stats (HP, shields, energy, etc.).
+     * Build panel for bases:
+
+       * Buttons or slots for building ship types.
+       * Display cost and build time.
+     * Minimap/radar view.
+
+---
+
+## J. Construction, Production, and Upgrades
+
+1. **Ship Production**
+
+   * Bases maintain **build queues**:
+
+     * Player selects a ship type.
+     * If enough resources are available, that ship is added to the queue.
+   * Each queued unit:
+
+     * Has a **build time**; time counts down continuously.
+     * Consumes resources at order time (or progressively, depending on design; pick one and be consistent).
+   * When build time completes:
+
+     * The ship is spawned near the base.
+     * Ship is idle, awaiting orders (or optionally follows a default rally point if implemented later).
+
+2. **Base Construction / Expansion**
+
+   * Players can establish **new bases** near other planetoids:
+
+     * Either by sending a construction-capable ship or by meeting some condition (defined in more detail later).
+   * New bases expand:
+
+     * Resource income (new planetoids).
+     * Production capacity (more simultaneous build queues).
+
+3. **Upgrades & Research**
+
+   * Player can invest resources into research or upgrade options that:
+
+     * Improve ship stats.
+     * Improve mining rates.
+     * Improve build times or reduce costs.
+   * Exact upgrade trees and numerical effects are defined later (in a separate guidance, or within `ship_guidance` if tied to ship types).
+
+---
+
+## K. AI & Opponents (High-Level)
+
+1. **Opposing Teams**
+
+   * There is at least one **opposing faction**:
+
+     * Can be AI-controlled.
+     * Could later be extended to human players in multiplayer, but base design should treat AI opponent as primary.
+
+2. **AI Responsibilities**
+
+   * The AI should:
+
+     * Manage its own economy: build bases, mine planetoids and asteroids.
+     * Produce ships according to simple strategic priorities (e.g., early Strikes, then Escourts/Lines, then Capital).
+     * Scout and attack player assets.
+     * Defend its own bases.
+
+3. **Difficulty**
+
+   * Difficulty can be adjusted via:
+
+     * Resource income multipliers.
+     * Build time scaling.
+     * Smarter or more aggressive fleet behaviors.
+
+---
+
+## L. Performance & Optimization Requirements
+
+1. **Wireframe Geometry**
+
+   * Objects should be represented by **minimal sets of lines**:
+
+     * Use small triangles, trapezoids, and simple outlines.
+     * Avoid extremely detailed meshes.
+   * Reuse geometry data (vertex buffers) across instances of the same ship type.
+
+2. **OpenGL Rendering**
+
+   * Use GPU-side vertex buffers and index buffers where appropriate.
+   * Minimize per-frame Python overhead by:
+
+     * Batching draw calls for similar objects when possible.
+     * Avoiding per-frame regeneration of geometry.
+
+3. **Game Logic**
+
+   * Keep per-frame logic efficient:
+
+     * Avoid O(n²) operations over large fleets unless necessary.
+     * Use spatial partitioning (if needed later) to handle collision/interaction efficiently.
+
+---
+
+## M. Extensibility & Future Systems
+
+The following are **allowed future extensions**, but **must not** be implemented without explicit instructions from the human designer:
+
+* Additional resource types or more complex economies.
+* Expanded tech trees and ability systems.
+* Special sector anomalies or environmental hazards.
+* More advanced fog-of-war behavior and sensor mechanics.
+* Campaign progression, persistent fleets, or metagame systems.
+
+Any such systems require additional, explicit guidance (e.g., new documents like `upgrade_guidance`, authored by the human).
+
+---
+
+## N. Final Reminder to the LLM Coder
+
+* You **must not** modify this `game_guidance` document.
+* You **must not** create or adopt any alternate guidance documents.
+* For ship-specific details (stats, abilities, variants), you must refer to the separate **`ship_guidance`** document, which is also immutable.
+* When in doubt, do the simplest implementation that clearly aligns with this guidance and surface questions as comments/TODOs for the human designer to resolve.
