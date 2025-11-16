@@ -79,6 +79,8 @@ class WireframeRenderer:
         self.enemy_color: Tuple[float, float, float, float] = (1.0, 0.35, 0.35, 1.0)
         self._fog_hidden_color: Tuple[float, float, float, float] = (0.02, 0.04, 0.07, 0.55)
         self._fog_unexplored_color: Tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.82)
+        self._friendly_beam_color: Tuple[float, float, float] = (0.45, 0.88, 1.0)
+        self._enemy_beam_color: Tuple[float, float, float] = (1.0, 0.45, 0.45)
 
     def draw_world(
         self,
@@ -135,6 +137,8 @@ class WireframeRenderer:
             if ship in world.selected_ships:
                 color = self.selection_color
             self._draw_mesh(mesh, ship.position, scale, color=color)
+
+        self._draw_beam_visuals(world)
 
         self._draw_fog_overlay(world, camera)
 
@@ -224,6 +228,45 @@ class WireframeRenderer:
             return True
         position = self._facility_render_position(facility)
         return grid.is_visual(position)
+
+    def _draw_beam_visuals(self, world: World) -> None:
+        beams = getattr(world, "beam_visuals", None)
+        if not beams:
+            return
+
+        gl.glDisable(gl.GL_DEPTH_TEST)
+        gl.glEnable(gl.GL_BLEND)
+        gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+        gl.glLineWidth(2.0)
+
+        for beam in beams:
+            alpha = getattr(beam, "alpha", None)
+            alpha_value = alpha() if callable(alpha) else 1.0
+            if alpha_value <= 0.0:
+                continue
+            color = self._beam_color_for_faction(getattr(beam, "faction", ""), alpha_value)
+            start = getattr(beam, "start", (0.0, 0.0))
+            end = getattr(beam, "end", (0.0, 0.0))
+            self._draw_beam_segment(start, end, color)
+
+        gl.glLineWidth(1.0)
+        gl.glDisable(gl.GL_BLEND)
+        gl.glEnable(gl.GL_DEPTH_TEST)
+
+    def _beam_color_for_faction(self, faction: str, alpha: float) -> Tuple[float, float, float, float]:
+        base = self._friendly_beam_color if faction == "player" else self._enemy_beam_color
+        glow = min(1.0, max(0.15, 0.25 + 0.75 * alpha))
+        return (base[0], base[1], base[2], glow)
+
+    @staticmethod
+    def _draw_beam_segment(
+        start: Tuple[float, float], end: Tuple[float, float], color: Tuple[float, float, float, float]
+    ) -> None:
+        gl.glColor4f(*color)
+        gl.glBegin(gl.GL_LINES)
+        gl.glVertex3f(start[0], 6.0, start[1])
+        gl.glVertex3f(end[0], 6.0, end[1])
+        gl.glEnd()
 
     def _draw_screen_rect(
         self,
