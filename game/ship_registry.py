@@ -27,6 +27,12 @@ class ShipDefinition:
     weapon_damage: float
     design_notes_wireframe: str
     upgrade_hooks: List[str]
+    worker_carry_capacity: float = 0.0
+    worker_mining_time: float = 0.0
+
+    @property
+    def is_worker(self) -> bool:
+        return self.worker_carry_capacity > 0.0 and self.worker_mining_time > 0.0
 
 
 def _strike_definitions() -> Dict[str, ShipDefinition]:
@@ -386,11 +392,48 @@ def _capital_definitions() -> Dict[str, ShipDefinition]:
     }
 
 
+def _utility_definitions() -> Dict[str, ShipDefinition]:
+    return {
+        "Skimmer Drone": ShipDefinition(
+            name="Skimmer Drone",
+            ship_class="Utility",
+            role="Resource worker",
+            lore_blurb=(
+                "Skimmer Drones shuttle ore canisters between the Astral Citadel and nearby planetoids. "
+                "They are little more than an engine, a grappler, and a hopeful prayer that nothing shoots at them."
+            ),
+            resource_cost=250,
+            build_time=15.0,
+            health=320,
+            armor=20,
+            shields=150,
+            energy=150,
+            energy_regen=5.0,
+            flight_speed=260.0,
+            visual_range=600.0,
+            radar_range=700.0,
+            firing_range=250.0,
+            weapon_damage=0.0,
+            design_notes_wireframe=(
+                "Compact utility craft with a bulbous cargo pod slung beneath a thin forward fuselage."
+            ),
+            upgrade_hooks=[
+                "Cargo clamps that slightly improve carry capacity.",
+                "Thruster refits to speed up hauling runs.",
+                "Sensor tethers that warn of ambushes.",
+            ],
+            worker_carry_capacity=6.0,
+            worker_mining_time=2.5,
+        ),
+    }
+
+
 SHIP_DEFINITIONS: Dict[str, ShipDefinition] = {}
 SHIP_DEFINITIONS.update(_strike_definitions())
 SHIP_DEFINITIONS.update(_escort_definitions())
 SHIP_DEFINITIONS.update(_line_definitions())
 SHIP_DEFINITIONS.update(_capital_definitions())
+SHIP_DEFINITIONS.update(_utility_definitions())
 
 
 def get_ship_definition(name: str) -> ShipDefinition:
