@@ -11,7 +11,7 @@ import numpy as np
 import pygame
 
 from game.camera import Camera3D
-from game.entities import Base, Facility
+from game.entities import Base, Facility, Ship
 from game.world import World
 from game.ship_registry import ShipDefinition
 from ui.layout import UILayout
@@ -351,6 +351,7 @@ class WireframeRenderer:
         if not overlay_active:
             return
         try:
+            self._draw_ship_status_bars(world, camera)
             self._draw_base_progress_bars(world, camera)
             self._draw_selected_base_spawn_ui(world, camera)
         finally:
@@ -463,6 +464,73 @@ class WireframeRenderer:
         if not self._spawn_menu_visible or self._spawn_menu_base is not base:
             return
         self._draw_spawn_menu(world, base, button_rect)
+
+    def _draw_ship_status_bars(self, world: World, camera: Camera3D) -> None:
+        grid = getattr(world, "visibility", None)
+        viewport_rect = pygame.Rect(0, 0, *self._current_viewport_size)
+        for ship in world.ships:
+            if ship.faction != world.player_faction:
+                if grid is not None and not grid.is_visual(ship.position):
+                    continue
+            if ship.current_health >= ship.max_health and ship.current_shields >= ship.max_shields:
+                continue
+            screen_pos = camera.world_to_screen(ship.position)
+            if screen_pos is None:
+                continue
+            self._draw_ship_status_pair(screen_pos, ship, viewport_rect)
+
+    def _draw_ship_status_pair(
+        self, screen_pos: Tuple[float, float], ship: Ship, viewport_rect: pygame.Rect
+    ) -> None:
+        bar_width = 62
+        bar_height = 6
+        spacing = 2
+        vertical_offset = 46
+        left = int(screen_pos[0] - bar_width / 2)
+        top = int(screen_pos[1] - vertical_offset)
+        total_height = bar_height * 2 + spacing
+        rect = pygame.Rect(left, top, bar_width, total_height)
+        if viewport_rect.width > 0 and viewport_rect.height > 0:
+            if viewport_rect.width > 16 and viewport_rect.height > 16:
+                rect.clamp_ip(viewport_rect.inflate(-8, -8))
+            else:
+                rect.clamp_ip(viewport_rect)
+            left = rect.left
+            top = rect.top
+        shield_pct = 0.0 if ship.max_shields <= 0 else ship.current_shields / ship.max_shields
+        shield_pct = max(0.0, min(1.0, shield_pct))
+        health_pct = 0.0 if ship.max_health <= 0 else ship.current_health / ship.max_health
+        health_pct = max(0.0, min(1.0, health_pct))
+        shield_rect = pygame.Rect(left, top, bar_width, bar_height)
+        health_rect = pygame.Rect(left, top + bar_height + spacing, bar_width, bar_height)
+        self._draw_status_bar(shield_rect, shield_pct, (0.45, 0.78, 1.0, 0.95))
+        self._draw_status_bar(health_rect, health_pct, self._health_bar_color(health_pct))
+
+    def _draw_status_bar(
+        self,
+        rect: pygame.Rect,
+        percent: float,
+        fill_color: Tuple[float, float, float, float],
+    ) -> None:
+        bg_color = (0.03, 0.04, 0.07, 0.92)
+        border_color = (0.2, 0.28, 0.42, 1.0)
+        self._draw_overlay_rect(rect, bg_color)
+        inner = rect.inflate(-2, -2)
+        fill_width = int(max(0, inner.width) * percent)
+        if fill_width > 0 and inner.height > 0:
+            fill = pygame.Rect(inner.left, inner.top, fill_width, inner.height)
+            self._draw_overlay_rect(fill, fill_color)
+        self._draw_overlay_outline(rect, border_color)
+
+    @staticmethod
+    def _health_bar_color(percent: float) -> Tuple[float, float, float, float]:
+        if percent >= 0.8:
+            return (0.2, 0.8, 0.32, 0.95)
+        if percent >= 0.6:
+            return (0.85, 0.75, 0.25, 0.95)
+        if percent >= 0.4:
+            return (0.95, 0.55, 0.15, 0.95)
+        return (0.95, 0.25, 0.2, 0.95)
 
     def _draw_spawn_menu(self, world: World, base: Base, anchor_rect: pygame.Rect) -> None:
         ship_defs = sorted(
