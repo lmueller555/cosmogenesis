@@ -43,6 +43,7 @@ class Base(Entity):
     weapon_damage: float = 250.0
     production: ProductionQueue = field(default_factory=ProductionQueue)
     spawn_serial: int = field(default=0, init=False, repr=False)
+    faction: str = "player"
 
     # TODO: Attach upgrade modules and research integration when systems are implemented.
 
@@ -62,11 +63,14 @@ class Ship(Entity):
     """Runtime instance of a ship hull from `ship_guidance`."""
 
     definition: ShipDefinition
+    faction: str = "player"
     current_health: float = field(init=False)
     current_shields: float = field(init=False)
     current_energy: float = field(init=False)
     move_target: Optional[Vec2] = None
     arrival_threshold: float = 6.0
+    target: Optional["Ship"] = None
+    _weapon_cooldown: float = 0.0
 
     def __post_init__(self) -> None:
         self.current_health = float(self.definition.health)
@@ -97,6 +101,33 @@ class Ship(Entity):
         """Assign a new destination for this ship (``None`` clears orders)."""
 
         self.move_target = target
+
+    def is_enemy(self, other: "Ship") -> bool:
+        return self.faction != other.faction
+
+    def in_firing_range(self, other: "Ship") -> bool:
+        dx = other.position[0] - self.position[0]
+        dy = other.position[1] - self.position[1]
+        return dx * dx + dy * dy <= self.firing_range * self.firing_range
+
+    def acquire_target(self, candidates: List["Ship"]) -> None:
+        """Pick the closest valid enemy from ``candidates``."""
+
+        best_target: Optional[Ship] = None
+        best_distance_sq = float("inf")
+        for ship in candidates:
+            if not self.is_enemy(ship):
+                continue
+            dx = ship.position[0] - self.position[0]
+            dy = ship.position[1] - self.position[1]
+            distance_sq = dx * dx + dy * dy
+            if distance_sq <= self.firing_range * self.firing_range and distance_sq < best_distance_sq:
+                best_distance_sq = distance_sq
+                best_target = ship
+        self.target = best_target
+
+    def clear_target(self) -> None:
+        self.target = None
 
     def update(self, dt: float) -> None:
         """Advance ship state – currently only simple point-to-point movement."""
@@ -129,4 +160,34 @@ class Ship(Entity):
             self.position[1] + direction_y * max_step,
         )
 
-    # TODO: Combat systems, AI hooks, stance tracking, etc.
+    def tick_weapon_cooldown(self, dt: float) -> None:
+        if self._weapon_cooldown > 0.0:
+            self._weapon_cooldown = max(0.0, self._weapon_cooldown - dt)
+
+    def can_fire(self) -> bool:
+        return self._weapon_cooldown <= 0.0 and self.target is not None
+
+    def deal_damage(self) -> float:
+        """Return instantaneous damage output and reset the cooldown timer."""
+
+        # TODO: Pull weapon cadence from guidance once specified.
+        self._weapon_cooldown = 1.0
+        return self.definition.weapon_damage
+
+    def apply_damage(self, amount: float) -> bool:
+        """Apply ``amount`` of damage, returning ``True`` if the ship is destroyed."""
+
+        if amount <= 0.0:
+            return False
+
+        if self.current_shields > 0.0:
+            shield_damage = min(amount, self.current_shields)
+            self.current_shields -= shield_damage
+            amount -= shield_damage
+
+        if amount > 0.0:
+            self.current_health -= amount
+
+        return self.current_health <= 0.0
+
+    # TODO: Combat stances, AI hooks, aura tracking, etc.
