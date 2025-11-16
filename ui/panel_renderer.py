@@ -15,6 +15,7 @@ from game.world import World
 from game.visibility import VisibilityGrid
 from game.ship_registry import ShipDefinition
 from game.facility_registry import FacilityDefinition, all_facility_definitions
+from game.production import ProductionJob
 from .layout import UILayout
 
 
@@ -60,6 +61,12 @@ class UIPanelRenderer:
         self._minimap_bg = (0.02, 0.02, 0.03, 1.0)
         self._fog_unexplored = (0.0, 0.0, 0.0, 0.8)
         self._fog_hidden = (0.03, 0.03, 0.05, 0.55)
+        self._ship_class_colors = {
+            "Strike": (0.22, 0.42, 0.65, 0.92),
+            "Escort": (0.25, 0.55, 0.45, 0.92),
+            "Line": (0.55, 0.38, 0.25, 0.92),
+            "Capital": (0.58, 0.32, 0.55, 0.92),
+        }
         self._planetoid_colors = {
             "player": (0.3, 0.8, 1.0, 0.9),
             "enemy": (1.0, 0.35, 0.35, 0.9),
@@ -75,6 +82,10 @@ class UIPanelRenderer:
         self._facility_buttons: List[FacilityButton] = []
 
     def draw(self, world: World, camera: Camera3D, layout: UILayout) -> None:
+        self._research_buttons.clear()
+        self._production_buttons.clear()
+        self._facility_buttons.clear()
+
         width, height = layout.window_size
         gl.glViewport(0, 0, width, height)
         gl.glMatrixMode(gl.GL_PROJECTION)
@@ -95,15 +106,33 @@ class UIPanelRenderer:
         gl.glEnable(gl.GL_DEPTH_TEST)
 
     def handle_mouse_click(self, world: World, layout: UILayout, pos: Vec2) -> bool:
-        """Process left-clicks in the context panel.
+        """Process left-clicks in the HUD panel."""
 
-        Returns ``True`` if the event was handled (preventing other UI uses).
-        """
-
-        if not layout.context_rect.collidepoint(pos):
+        if not layout.ui_panel_rect.collidepoint(pos):
             return False
-        if world.selected_base is None:
+
+        if layout.selection_rect.collidepoint(pos):
+            if self._handle_selection_click(world, pos):
+                return True
+
+        if layout.context_rect.collidepoint(pos):
+            return self._handle_context_click(world, pos)
+
+        return True  # Click fell within the HUD but not on actionable widgets
+
+    def _handle_selection_click(self, world: World, pos: Vec2) -> bool:
+        base = world.selected_base
+        if base is None:
             return True
+        for button in self._production_buttons:
+            if not button.enabled or not button.rect.collidepoint(pos):
+                continue
+            if world.queue_ship(base, button.ship_name):
+                return True
+            return True
+        return True
+
+    def _handle_context_click(self, world: World, pos: Vec2) -> bool:
         for button in self._research_buttons:
             if not button.enabled:
                 continue
@@ -119,15 +148,7 @@ class UIPanelRenderer:
             if button.enabled and world.queue_facility(base, button.facility_type):
                 return True
             return True
-        for button in self._production_buttons:
-            if not button.rect.collidepoint(pos):
-                continue
-            if base is None:
-                return True
-            if button.enabled and world.queue_ship(base, button.ship_name):
-                return True
-            return True
-        return True  # Click in panel but nothing actionable
+        return True
 
     # ------------------------------------------------------------------
     # Background & panel scaffolding
@@ -168,7 +189,7 @@ class UIPanelRenderer:
     # ------------------------------------------------------------------
     def _draw_selection_summary(self, world: World, rect: pygame.Rect) -> None:
         if world.selected_base is not None:
-            self._draw_base_summary(world.selected_base, rect)
+            self._draw_base_shipyard_panel(world, rect)
             return
 
         ships = list(world.selected_ships)
@@ -200,7 +221,14 @@ class UIPanelRenderer:
             lines.insert(1, f"Group size: {len(ships)} ships")
         self._draw_text_block(rect.left + 16, rect.top + 24, lines)
 
-    def _draw_base_summary(self, base: Base, rect: pygame.Rect) -> None:
+    def _draw_base_shipyard_panel(self, world: World, rect: pygame.Rect) -> None:
+        base = world.selected_base
+        if base is None:
+            return
+
+        padding = 16
+        summary_x = rect.left + padding
+        summary_y = rect.top + padding
         lines = [
             f"{base.name} (Base)",
             f"HP: {base.current_health:.0f}/{base.max_health:.0f}",
@@ -213,7 +241,187 @@ class UIPanelRenderer:
             f"Radar Range: {base.radar_range_value:.0f}",
             f"Firing Range: {base.firing_range_value:.0f}",
         ]
-        self._draw_text_block(rect.left + 16, rect.top + 24, lines)
+        self._draw_text_block(summary_x, summary_y, lines)
+
+        summary_height = len(lines) * 22
+        queue_height = 84
+        shipyard_top = summary_y + summary_height + 18
+        shipyard_bottom = rect.bottom - queue_height - padding
+        if shipyard_bottom < shipyard_top:
+            shipyard_top = rect.top + summary_height + 24
+            shipyard_bottom = rect.bottom - queue_height - padding
+        shipyard_height = max(0, shipyard_bottom - shipyard_top)
+        shipyard_rect = pygame.Rect(
+            rect.left + padding,
+            int(shipyard_top),
+            rect.width - 2 * padding,
+            int(shipyard_height),
+        )
+
+        queue_rect = pygame.Rect(
+            rect.left + padding,
+            rect.bottom - queue_height,
+            rect.width - 2 * padding,
+            queue_height - padding // 2,
+        )
+
+        ship_defs = sorted(
+            world.unlocked_ship_definitions(),
+            key=lambda definition: (
+                self._ship_class_order(definition.ship_class),
+                definition.resource_cost,
+            ),
+        )
+        if shipyard_rect.height > 0:
+            self._draw_shipyard_background(shipyard_rect)
+            if ship_defs:
+                self._draw_shipyard_buttons(world, base, ship_defs, shipyard_rect)
+            else:
+                self._draw_text_centered(
+                    shipyard_rect.centerx,
+                    shipyard_rect.centery - 12,
+                    "No hulls unlocked yet.",
+                    self._muted_text,
+                )
+
+        self._draw_ship_queue_display(base, queue_rect)
+
+    def _draw_shipyard_background(self, rect: pygame.Rect) -> None:
+        bg = (0.08, 0.1, 0.14, 0.9)
+        border = (0.22, 0.28, 0.36, 1.0)
+        self._draw_rect(rect, bg)
+        self._draw_rect_outline(rect, border)
+        self._draw_text_centered(
+            rect.centerx,
+            rect.top + 10,
+            "Ship Construction",
+            self._context_text,
+        )
+
+    def _draw_shipyard_buttons(
+        self,
+        world: World,
+        base: Base,
+        ship_defs: List[ShipDefinition],
+        rect: pygame.Rect,
+    ) -> None:
+        button_area = pygame.Rect(rect.left + 12, rect.top + 32, rect.width - 24, rect.height - 44)
+        if button_area.height <= 0 or button_area.width <= 0:
+            return
+        button_width = 116
+        button_height = 112
+        spacing = 12
+        columns = max(1, int(button_area.width // (button_width + spacing)))
+        columns = min(columns, len(ship_defs)) if ship_defs else 1
+        if columns == 0:
+            columns = 1
+        rows = max(1, math.ceil(len(ship_defs) / columns))
+        total_width = columns * button_width + (columns - 1) * spacing
+        total_height = rows * button_height + (rows - 1) * spacing
+        start_x = button_area.left + max(0, (button_area.width - total_width) // 2)
+        start_y = button_area.top + max(0, (button_area.height - total_height) // 2)
+
+        for index, definition in enumerate(ship_defs):
+            row = index // columns
+            col = index % columns
+            x = start_x + col * (button_width + spacing)
+            y = start_y + row * (button_height + spacing)
+            button_rect = pygame.Rect(int(x), int(y), button_width, button_height)
+            enabled, status_line = self._ship_button_state(world, base, definition)
+            self._draw_shipyard_button(button_rect, definition, enabled, status_line)
+            self._production_buttons.append(
+                ProductionButton(ship_name=definition.name, rect=button_rect, enabled=enabled)
+            )
+
+    def _draw_shipyard_button(
+        self,
+        rect: pygame.Rect,
+        definition: ShipDefinition,
+        enabled: bool,
+        status_line: Optional[str],
+    ) -> None:
+        if enabled:
+            bg = (0.14, 0.18, 0.26, 0.95)
+            text_color = self._text_color
+        else:
+            bg = (0.08, 0.09, 0.13, 0.8)
+            text_color = self._muted_text
+        border = (0.3, 0.36, 0.48, 1.0)
+        self._draw_rect(rect, bg)
+        self._draw_rect_outline(rect, border)
+
+        icon_rect = pygame.Rect(rect.left + 12, rect.top + 10, rect.width - 24, rect.height - 48)
+        icon_color = self._ship_class_color(definition.ship_class)
+        self._draw_rect(icon_rect, icon_color)
+        self._draw_rect_outline(icon_rect, (0.18, 0.22, 0.30, 1.0))
+        self._draw_text_centered(
+            icon_rect.centerx,
+            icon_rect.top + icon_rect.height * 0.35,
+            definition.ship_class,
+            (20, 24, 32),
+        )
+        self._draw_text_centered(icon_rect.centerx, icon_rect.bottom - 18, definition.role, self._muted_text)
+
+        self._draw_text_centered(rect.centerx, rect.bottom - 30, definition.name, text_color)
+        info_line = f"{definition.build_time:.0f}s | {definition.resource_cost:,}"
+        info_color = self._context_text
+        if status_line and not enabled:
+            info_line = status_line
+            info_color = self._muted_text
+        self._draw_text_centered(rect.centerx, rect.bottom - 16, info_line, info_color)
+
+    def _draw_ship_queue_display(self, base: Base, rect: pygame.Rect) -> None:
+        bg = (0.06, 0.07, 0.1, 0.92)
+        border = (0.22, 0.26, 0.34, 1.0)
+        self._draw_rect(rect, bg)
+        self._draw_rect_outline(rect, border)
+
+        if base is None:
+            return
+
+        jobs = self._queue_jobs(base)
+        queue_label = f"Queue {len(jobs)}/{base.production.max_jobs}"
+        self._draw_text(rect.left + 12, rect.top + 18, queue_label, self._context_text)
+        if base.production.queue_full():
+            self._draw_text(rect.right - 140, rect.top + 18, "Queue full", self._muted_text)
+
+        if not jobs:
+            self._draw_text_centered(rect.centerx, rect.centery, "Queue empty", self._muted_text)
+            return
+
+        icon_size = 46
+        spacing = 10
+        total_width = len(jobs) * icon_size + (len(jobs) - 1) * spacing
+        start_x = rect.centerx - total_width * 0.5
+        icon_y = rect.top + 32
+
+        for index, job in enumerate(jobs):
+            icon_rect = pygame.Rect(
+                int(start_x + index * (icon_size + spacing)), int(icon_y), icon_size, icon_size
+            )
+            color = self._ship_class_color(job.ship_definition.ship_class)
+            self._draw_rect(icon_rect, color)
+            border_color = self._selected_color if index == 0 else (0.25, 0.3, 0.38, 1.0)
+            self._draw_rect_outline(icon_rect, border_color)
+            label = job.ship_definition.name[:2].upper()
+            self._draw_text_centered(icon_rect.centerx, icon_rect.centery - 10, label, (20, 24, 32))
+            self._draw_text_centered(
+                icon_rect.centerx,
+                icon_rect.centery + 6,
+                job.ship_definition.ship_class[:3],
+                self._text_color,
+            )
+
+    def _queue_jobs(self, base: Base) -> List[ProductionJob]:
+        jobs: List[ProductionJob] = []
+        active = base.production.active_job
+        if active is not None:
+            jobs.append(active)
+        jobs.extend(base.production.queued_jobs)
+        return jobs[: base.production.max_jobs]
+
+    def _ship_class_color(self, ship_class: str) -> Tuple[float, float, float, float]:
+        return self._ship_class_colors.get(ship_class, (0.18, 0.22, 0.3, 0.9))
 
     def _draw_text_block(
         self,
@@ -240,6 +448,21 @@ class UIPanelRenderer:
             data,
         )
 
+    def _draw_text_centered(
+        self, center_x: float, y: float, text: str, color: Tuple[int, int, int]
+    ) -> None:
+        surface = self._font.render(text, True, color)
+        data = pygame.image.tostring(surface, "RGBA", True)
+        x = center_x - surface.get_width() * 0.5
+        gl.glRasterPos2f(x, y)
+        gl.glDrawPixels(
+            surface.get_width(),
+            surface.get_height(),
+            gl.GL_RGBA,
+            gl.GL_UNSIGNED_BYTE,
+            data,
+        )
+
     # ------------------------------------------------------------------
     # Context panel placeholder
     # ------------------------------------------------------------------
@@ -247,10 +470,6 @@ class UIPanelRenderer:
         padding = 12
         cursor_x = rect.left + padding
         cursor_y = rect.top + padding
-        self._research_buttons.clear()
-        self._production_buttons.clear()
-        self._facility_buttons.clear()
-
         selection_kind = self._context_selection_kind(world)
         if selection_kind == "base":
             self._draw_base_context(world, rect, cursor_x, cursor_y)
@@ -289,9 +508,6 @@ class UIPanelRenderer:
         cursor_y += 18
         cursor_y = self._draw_facility_section(world, rect, cursor_x, cursor_y, base)
         cursor_y += 18
-        self._draw_construction_section(
-            world, rect, cursor_x, cursor_y, base
-        )
 
     def _draw_facility_overview(
         self, world: World, cursor_x: float, cursor_y: float, base: Optional[Base]
@@ -514,83 +730,6 @@ class UIPanelRenderer:
             cursor_y += height + 8
 
         return cursor_y
-
-    def _draw_construction_section(
-        self,
-        world: World,
-        rect: pygame.Rect,
-        cursor_x: float,
-        cursor_y: float,
-        base: Optional[Base],
-    ) -> None:
-        self._draw_text(cursor_x, cursor_y, "Ship Construction", self._context_text)
-        cursor_y += 24
-
-        if base is None:
-            self._draw_text(cursor_x, cursor_y, "No operational base.", self._muted_text)
-            cursor_y += 22
-            self._draw_text(cursor_x, cursor_y, "Build a base to produce ships.", self._muted_text)
-            return
-
-        active_job = base.production.active_job
-        if active_job is None:
-            self._draw_text(cursor_x, cursor_y, "Idle shipyards", self._muted_text)
-            cursor_y += 22
-        else:
-            definition = active_job.ship_definition
-            total_time = max(0.1, definition.build_time)
-            progress = 1.0 - (active_job.remaining_time / total_time)
-            self._draw_text(
-                cursor_x,
-                cursor_y,
-                f"Building: {definition.name} ({progress * 100:4.0f}% complete)",
-                self._text_color,
-            )
-            cursor_y += 20
-            self._draw_text(
-                cursor_x,
-                cursor_y,
-                f"{active_job.remaining_time:0.1f}s remaining",
-                self._muted_text,
-            )
-            cursor_y += 24
-
-        queued = list(base.production.queued_jobs)
-        if queued:
-            queue_names = ", ".join(job.ship_definition.name for job in queued[:3])
-            more = len(queued) - 3
-            suffix = f" (+{more} more)" if more > 0 else ""
-            self._draw_text(
-                cursor_x,
-                cursor_y,
-                f"Queue: {queue_names}{suffix}",
-                self._muted_text,
-            )
-            cursor_y += 26
-        else:
-            self._draw_text(cursor_x, cursor_y, "Queue empty", self._muted_text)
-            cursor_y += 22
-
-        ship_defs = sorted(
-            world.unlocked_ship_definitions(),
-            key=lambda definition: (self._ship_class_order(definition.ship_class), definition.resource_cost),
-        )
-        if not ship_defs:
-            self._draw_text(cursor_x, cursor_y, "No hulls unlocked yet.", self._muted_text)
-            return
-
-        self._draw_text(cursor_x, cursor_y, "Available Hulls", self._context_text)
-        cursor_y += 24
-
-        for definition in ship_defs:
-            height = 72
-            button_rect = pygame.Rect(rect.left + 8, int(cursor_y), rect.width - 16, height)
-            enabled, status_line = self._ship_button_state(world, base, definition)
-            self._draw_ship_button(button_rect, definition, enabled, status_line=status_line)
-            self._production_buttons.append(
-                ProductionButton(ship_name=definition.name, rect=button_rect, enabled=enabled)
-            )
-            cursor_y += height + 6
 
     # ------------------------------------------------------------------
     # Mini-map
@@ -880,42 +1019,6 @@ class UIPanelRenderer:
             return False, "No operational base"
         allowed, reason = world.ship_production_status(base, definition)
         return allowed, reason
-
-    def _draw_ship_button(
-        self,
-        rect: pygame.Rect,
-        definition: ShipDefinition,
-        enabled: bool,
-        *,
-        status_line: Optional[str] = None,
-    ) -> None:
-        if enabled:
-            bg = (0.12, 0.16, 0.23, 0.95)
-            text_color = self._text_color
-        else:
-            bg = (0.08, 0.08, 0.10, 0.8)
-            text_color = self._muted_text
-        border = (0.28, 0.35, 0.48, 1.0)
-        self._draw_rect(rect, bg)
-        self._draw_rect_outline(rect, border)
-        text_x = rect.left + 10
-        text_y = rect.top + 12
-        self._draw_text(text_x, text_y, f"{definition.name} ({definition.ship_class})", text_color)
-        self._draw_text(
-            text_x,
-            text_y + 20,
-            f"{definition.role}",
-            self._muted_text,
-        )
-        self._draw_text(
-            text_x,
-            text_y + 36,
-            f"Cost {definition.resource_cost:,} | {definition.build_time:.0f}s",
-            self._context_text,
-        )
-        if status_line:
-            status_color = self._muted_text if not enabled else self._context_text
-            self._draw_text(text_x, text_y + 52, status_line, status_color)
 
     def _draw_facility_button(
         self,
