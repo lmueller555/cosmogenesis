@@ -21,6 +21,7 @@ from .research import ResearchAvailability, ResearchManager, ResearchNode
 from .visibility import VisibilityGrid
 
 Vec2 = Tuple[float, float]
+SHIP_COLLISION_PUSH_SPEED = 180.0
 
 # ---------------------------------------------------------------------------
 # Production facility requirements derived from `ship_guidance`.
@@ -105,6 +106,8 @@ class World:
         for ship in self.ships:
             ship.update(dt)
             ship.tick_weapon_cooldown(dt)
+
+        self._resolve_ship_collisions(dt)
 
         worker_income = self._update_worker_behaviors(dt)
         total_income += worker_income
@@ -311,6 +314,52 @@ class World:
         if ship.is_worker:
             self._configure_worker(ship, base)
         self.ships.append(ship)
+
+    def _resolve_ship_collisions(self, dt: float) -> None:
+        """Gently push overlapping idle ships apart so they don't fully stack."""
+
+        if dt <= 0.0 or not self.ships:
+            return
+
+        colliders: List[Ship] = [
+            ship
+            for ship in self.ships
+            if not ship.is_worker and ship.move_target is None and ship.collision_radius > 0.0
+        ]
+        if len(colliders) < 2:
+            return
+
+        max_push = SHIP_COLLISION_PUSH_SPEED * dt
+        for index, ship in enumerate(colliders):
+            for other_index in range(index + 1, len(colliders)):
+                other = colliders[other_index]
+                min_distance = ship.collision_radius + other.collision_radius
+                if min_distance <= 0.0:
+                    continue
+                dx = other.position[0] - ship.position[0]
+                dy = other.position[1] - ship.position[1]
+                distance = math.hypot(dx, dy)
+                if distance >= min_distance:
+                    continue
+                overlap = min_distance - distance
+                if distance <= 1e-5:
+                    angle = math.radians((index * 31 + other_index * 17) % 360)
+                    direction_x = math.cos(angle)
+                    direction_y = math.sin(angle)
+                else:
+                    direction_x = dx / distance
+                    direction_y = dy / distance
+                push_distance = min(overlap * 0.5, max_push)
+                if push_distance <= 0.0:
+                    continue
+                ship.position = (
+                    ship.position[0] - direction_x * push_distance,
+                    ship.position[1] - direction_y * push_distance,
+                )
+                other.position = (
+                    other.position[0] + direction_x * push_distance,
+                    other.position[1] + direction_y * push_distance,
+                )
 
     def _update_combat(self, dt: float) -> None:
         """Resolve simplistic auto-attacks between hostile ships."""
