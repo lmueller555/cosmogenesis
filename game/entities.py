@@ -49,6 +49,7 @@ class Base(Entity):
     current_health: float = field(init=False)
     current_shields: float = field(init=False)
     armor_value: float = field(init=False)
+    visual_range_value: float = field(init=False)
     radar_range_value: float = field(init=False)
     firing_range_value: float = field(init=False)
     weapon_damage_value: float = field(init=False)
@@ -61,6 +62,7 @@ class Base(Entity):
         self.current_health = self.max_health
         self.current_shields = self.max_shields
         self.armor_value = float(self.armor)
+        self.visual_range_value = float(self.visual_range)
         self.radar_range_value = float(self.radar_range)
         self.firing_range_value = float(self.firing_range)
         self.weapon_damage_value = float(self.weapon_damage)
@@ -98,6 +100,7 @@ class Base(Entity):
         self.armor_value = float(self.armor) * mult("armor")
         self.weapon_damage_value = float(self.weapon_damage) * mult("weapon_damage")
         self.firing_range_value = float(self.firing_range) * mult("firing_range")
+        self.visual_range_value = float(self.visual_range) * mult("visual_range")
         self.radar_range_value = float(self.radar_range) * mult("radar_range")
 
 

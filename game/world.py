@@ -12,6 +12,7 @@ from .ship_registry import (
     get_ship_definition,
 )
 from .research import ResearchAvailability, ResearchManager, ResearchNode
+from .visibility import VisibilityGrid
 
 Vec2 = Tuple[float, float]
 
@@ -28,8 +29,12 @@ class World:
     resources: float = 20_000.0
     resource_income_rate: float = 0.0  # Updated each tick for UI feedback
     research_manager: ResearchManager = field(default_factory=ResearchManager)
+    visibility: VisibilityGrid = field(init=False, repr=False)
 
-    # TODO: Track fog-of-war state, radar reveals, and additional entity types.
+    # TODO: Extend fog-of-war to account for enemy sensors and neutral factions.
+
+    def __post_init__(self) -> None:
+        self.visibility = VisibilityGrid(world_width=self.width, world_height=self.height)
 
     def update(self, dt: float) -> None:
         """Advance simulation forward by ``dt`` seconds."""
@@ -53,6 +58,8 @@ class World:
         if completed_research is not None:
             # TODO: propagate stat bonuses / notifications once UI exists.
             self._refresh_research_bonuses()
+
+        self.refresh_visibility()
 
     def issue_move_order(self, destination: Vec2) -> None:
         """Send every selected ship toward ``destination``."""
@@ -233,6 +240,30 @@ class World:
         multiplier = 1.0 + bonus
         return planetoid_income * multiplier
 
+    def refresh_visibility(self) -> None:
+        """Rebuild fog-of-war state based on friendly sensors."""
+
+        if not hasattr(self, "visibility"):
+            return
+        self.visibility.begin_frame()
+        for position, visual_range, radar_range in self._visibility_sources():
+            if visual_range > 0.0:
+                self.visibility.mark_visual(position, visual_range)
+            if radar_range > 0.0:
+                self.visibility.mark_radar(position, radar_range)
+
+    def _visibility_sources(self) -> List[Tuple[Vec2, float, float]]:
+        sources: List[Tuple[Vec2, float, float]] = []
+        for base in self.bases:
+            if base.faction != "player":
+                continue
+            sources.append((base.position, base.visual_range_value, base.radar_range_value))
+        for ship in self.ships:
+            if ship.faction != "player":
+                continue
+            sources.append((ship.position, ship.visual_range, ship.radar_range))
+        return sources
+
 
 def create_initial_world() -> World:
     """Create a simple sandbox world with one planetoid and one Astral Citadel."""
@@ -289,6 +320,8 @@ def create_initial_world() -> World:
     # Queue a few autonomous builds so the production loop is observable.
     for ship_name in ["Spearling", "Wisp", "Sunlance"]:
         world.queue_ship(base, ship_name)
+
+    world.refresh_visibility()
 
     return world
 

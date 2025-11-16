@@ -46,7 +46,10 @@ class UIPanelRenderer:
         self._friendly_color = (1.0, 1.0, 1.0, 1.0)
         self._selected_color = (0.2, 0.6, 1.0, 1.0)
         self._enemy_color = (1.0, 0.25, 0.25, 1.0)
+        self._enemy_radar_color = (1.0, 0.4, 0.4, 0.65)
         self._minimap_bg = (0.02, 0.02, 0.03, 1.0)
+        self._fog_unexplored = (0.0, 0.0, 0.0, 0.8)
+        self._fog_hidden = (0.03, 0.03, 0.05, 0.55)
         self._research_buttons: List[ResearchButton] = []
         self._production_buttons: List[ProductionButton] = []
 
@@ -370,11 +373,20 @@ class UIPanelRenderer:
 
         bounds = self._world_bounds(world)
 
-        # TODO: Integrate fog-of-war exploration state rather than showing everything.
+        self._draw_fog_overlay(world, rect, bounds)
+
         for ship in world.ships:
-            color = self._friendly_color if ship.faction == "player" else self._enemy_color
-            if ship in world.selected_ships and ship.faction == "player":
-                color = self._selected_color
+            color = self._friendly_color
+            if ship.faction != "player":
+                if not world.visibility.is_radar(ship.position):
+                    continue
+                if world.visibility.is_visual(ship.position):
+                    color = self._enemy_color
+                else:
+                    color = self._enemy_radar_color
+            else:
+                if ship in world.selected_ships:
+                    color = self._selected_color
             point = self._world_to_minimap(ship.position, rect, bounds)
             self._draw_minimap_dot(point, color)
 
@@ -383,6 +395,7 @@ class UIPanelRenderer:
             self._draw_minimap_dot(point, self._friendly_color, size=5.0)
 
         self._draw_camera_outline(camera, rect, bounds)
+        self._draw_minimap_outline(rect)
 
     def _draw_camera_outline(
         self, camera: Camera3D, minimap_rect: pygame.Rect, bounds: Tuple[float, float, float, float]
@@ -407,6 +420,15 @@ class UIPanelRenderer:
             gl.glVertex2f(x, y)
         gl.glEnd()
 
+    def _draw_minimap_outline(self, rect: pygame.Rect) -> None:
+        gl.glColor4f(0.4, 0.45, 0.6, 1.0)
+        gl.glBegin(gl.GL_LINE_LOOP)
+        gl.glVertex2f(rect.left, rect.top)
+        gl.glVertex2f(rect.right, rect.top)
+        gl.glVertex2f(rect.right, rect.bottom)
+        gl.glVertex2f(rect.left, rect.bottom)
+        gl.glEnd()
+
     def _draw_minimap_dot(
         self, point: Vec2, color: Tuple[float, float, float, float], size: float = 4.0
     ) -> None:
@@ -422,6 +444,46 @@ class UIPanelRenderer:
         half_w = world.width * 0.5
         half_h = world.height * 0.5
         return (-half_w, half_w, -half_h, half_h)
+
+    def _draw_fog_overlay(
+        self, world: World, rect: pygame.Rect, bounds: Tuple[float, float, float, float]
+    ) -> None:
+        grid = getattr(world, "visibility", None)
+        if grid is None:
+            return
+        world_width = bounds[1] - bounds[0]
+        world_height = bounds[3] - bounds[2]
+        if world_width <= 0 or world_height <= 0:
+            return
+        for row, col, cell in grid.cells():
+            if not cell.explored:
+                color = self._fog_unexplored
+            elif not cell.visual:
+                color = self._fog_hidden
+            else:
+                continue
+            min_x, max_x, min_y, max_y = grid.cell_bounds(row, col)
+            left = rect.left + ((min_x - bounds[0]) / world_width) * rect.width
+            right = rect.left + ((max_x - bounds[0]) / world_width) * rect.width
+            bottom = rect.bottom - ((min_y - bounds[2]) / world_height) * rect.height
+            top = rect.bottom - ((max_y - bounds[2]) / world_height) * rect.height
+            self._draw_minimap_quad(left, right, top, bottom, color)
+
+    def _draw_minimap_quad(
+        self,
+        left: float,
+        right: float,
+        top: float,
+        bottom: float,
+        color: Tuple[float, float, float, float],
+    ) -> None:
+        gl.glColor4f(*color)
+        gl.glBegin(gl.GL_QUADS)
+        gl.glVertex2f(left, top)
+        gl.glVertex2f(right, top)
+        gl.glVertex2f(right, bottom)
+        gl.glVertex2f(left, bottom)
+        gl.glEnd()
 
     def _world_to_minimap(
         self,
