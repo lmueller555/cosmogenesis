@@ -7,32 +7,103 @@ from typing import List, Sequence, Tuple
 
 
 Vec2 = Tuple[float, float]
+Vec3 = Tuple[float, float, float]
 
 
 @dataclass(frozen=True)
 class WireframeMesh:
     """Simple container for line segments connecting vertex indices."""
 
-    vertices: Sequence[Vec2]
+    vertices: Sequence[Vec3]
     segments: Sequence[Tuple[int, int]]
 
-    def transformed(self, offset: Vec2 = (0.0, 0.0), scale: float = 1.0) -> "WireframeMesh":
+    def transformed(
+        self,
+        offset: Vec3 = (0.0, 0.0, 0.0),
+        scale: float = 1.0,
+    ) -> "WireframeMesh":
         """Return a new mesh with vertices offset/scaled for drawing."""
-        ox, oy = offset
-        transformed_vertices = [((x * scale) + ox, (y * scale) + oy) for x, y in self.vertices]
+
+        ox, oy, oz = offset
+        transformed_vertices = [
+            ((x * scale) + ox, (y * scale) + oy, (z * scale) + oz)
+            for x, y, z in self.vertices
+        ]
         return WireframeMesh(transformed_vertices, self.segments)
 
 
-def create_planetoid_mesh(radius: float = 60.0, segments: int = 20) -> WireframeMesh:
-    """Approximate a circular planetoid silhouette using line segments."""
-    vertices: List[Vec2] = []
+def _extrude_outline(
+    vertices_2d: Sequence[Vec2],
+    segments_2d: Sequence[Tuple[int, int]],
+    height: float,
+) -> WireframeMesh:
+    """Turn a 2D silhouette into a shallow 3D prism for the angled camera."""
+
+    half = height / 2.0
+    base_ring = [(x, -half, y) for x, y in vertices_2d]
+    top_ring = [(x, half, y) for x, y in vertices_2d]
+    vertices = base_ring + top_ring
+    vertex_count = len(vertices_2d)
+
+    segments: List[Tuple[int, int]] = []
+    seen = set()
+
+    def add_segment(a: int, b: int) -> None:
+        if a == b:
+            return
+        key = tuple(sorted((a, b)))
+        if key in seen:
+            return
+        seen.add(key)
+        segments.append((a, b))
+
+    for a, b in segments_2d:
+        add_segment(a, b)
+        add_segment(a + vertex_count, b + vertex_count)
+        add_segment(a, a + vertex_count)
+        add_segment(b, b + vertex_count)
+
+    return WireframeMesh(vertices, segments)
+
+
+def create_planetoid_mesh(radius: float = 60.0, segments: int = 24) -> WireframeMesh:
+    """Approximate a spherical planetoid with multiple great-circle rings."""
+
+    vertices: List[Vec3] = []
     lines: List[Tuple[int, int]] = []
-    for i in range(segments):
-        angle = (2 * math.pi * i) / segments
-        vertices.append((math.cos(angle) * radius, math.sin(angle) * radius))
-        if i > 0:
-            lines.append((i - 1, i))
-    lines.append((segments - 1, 0))
+
+    def add_circle(axis: str, tilt: float = 0.0) -> None:
+        start_index = len(vertices)
+        for i in range(segments):
+            angle = (2 * math.pi * i) / segments
+            if axis == "xy":
+                x = math.cos(angle) * radius
+                y = math.sin(angle) * radius
+                z = 0.0
+            elif axis == "yz":
+                x = 0.0
+                y = math.cos(angle) * radius
+                z = math.sin(angle) * radius
+            else:  # xz plane
+                x = math.cos(angle) * radius
+                y = 0.0
+                z = math.sin(angle) * radius
+            if tilt != 0.0:
+                # apply a simple rotation around the X axis for variety
+                cos_t = math.cos(tilt)
+                sin_t = math.sin(tilt)
+                y, z = y * cos_t - z * sin_t, y * sin_t + z * cos_t
+            vertices.append((x, y, z))
+            if i > 0:
+                lines.append((start_index + i - 1, start_index + i))
+        lines.append((start_index + segments - 1, start_index))
+
+    add_circle("xz")
+    add_circle("xy")
+    add_circle("yz")
+    add_circle("xz", tilt=math.radians(25))
+    add_circle("xz", tilt=math.radians(-25))
+
     return WireframeMesh(vertices, lines)
 
 
@@ -103,7 +174,7 @@ def create_astral_citadel_mesh() -> WireframeMesh:
         ]
     )
 
-    return WireframeMesh(vertices, lines)
+    return _extrude_outline(vertices, lines, height=80.0)
 
 
 # --- Ship Meshes ---------------------------------------------------------
@@ -137,7 +208,7 @@ def create_spearling_mesh() -> WireframeMesh:
         (3, 7),
         (4, 7),
     ]
-    return WireframeMesh(vertices, segments)
+    return _extrude_outline(vertices, segments, height=8.0)
 
 
 def create_wisp_mesh() -> WireframeMesh:
@@ -164,7 +235,7 @@ def create_wisp_mesh() -> WireframeMesh:
         (7, 8),
         (6, 8),
     ]
-    return WireframeMesh(vertices, segments)
+    return _extrude_outline(vertices, segments, height=10.0)
 
 
 def create_daggerwing_mesh() -> WireframeMesh:
@@ -189,7 +260,7 @@ def create_daggerwing_mesh() -> WireframeMesh:
         (0, 2),
         (0, 4),
     ]
-    return WireframeMesh(vertices, segments)
+    return _extrude_outline(vertices, segments, height=12.0)
 
 
 def create_warden_mesh() -> WireframeMesh:
@@ -223,7 +294,7 @@ def create_warden_mesh() -> WireframeMesh:
     segments.extend([(16, 17), (17, 18), (18, 19), (19, 16)])
     segments.append((0, 2))
     segments.append((1, 3))
-    return WireframeMesh(vertices, segments)
+    return _extrude_outline(vertices, segments, height=12.0)
 
 
 def create_sunlance_mesh() -> WireframeMesh:
@@ -250,7 +321,7 @@ def create_sunlance_mesh() -> WireframeMesh:
         (6, 8),
         (7, 8),
     ]
-    return WireframeMesh(vertices, segments)
+    return _extrude_outline(vertices, segments, height=10.0)
 
 
 def create_auric_veil_mesh() -> WireframeMesh:
@@ -278,7 +349,7 @@ def create_auric_veil_mesh() -> WireframeMesh:
         (2, 6),
         (3, 7),
     ]
-    return WireframeMesh(vertices, segments)
+    return _extrude_outline(vertices, segments, height=12.0)
 
 
 def create_iron_halberd_mesh() -> WireframeMesh:
@@ -299,7 +370,7 @@ def create_iron_halberd_mesh() -> WireframeMesh:
     segments = _loop_segments(4)
     segments.extend([(0, 4), (1, 5), (4, 5), (4, 6), (5, 7)])
     segments.extend([(2, 11), (11, 10), (10, 9), (9, 3), (2, 3)])
-    return WireframeMesh(vertices, segments)
+    return _extrude_outline(vertices, segments, height=16.0)
 
 
 def create_star_fortress_mesh() -> WireframeMesh:
@@ -341,7 +412,7 @@ def create_star_fortress_mesh() -> WireframeMesh:
     segments.extend([(16, 17), (17, 18), (18, 19), (19, 16)])
     segments.extend([(20, 21), (21, 22), (22, 23), (23, 20)])
     segments.extend([(24, 25), (25, 26), (26, 27), (27, 24)])
-    return WireframeMesh(vertices, segments)
+    return _extrude_outline(vertices, segments, height=18.0)
 
 
 def create_lance_of_dawn_mesh() -> WireframeMesh:
@@ -373,7 +444,7 @@ def create_lance_of_dawn_mesh() -> WireframeMesh:
         (1, 8),
         (2, 9),
     ]
-    return WireframeMesh(vertices, segments)
+    return _extrude_outline(vertices, segments, height=22.0)
 
 
 def create_titans_ward_mesh() -> WireframeMesh:
@@ -406,7 +477,7 @@ def create_titans_ward_mesh() -> WireframeMesh:
     segments.extend([(16, 17), (17, 18), (18, 19), (19, 16)])
     segments.append((0, 2))
     segments.append((1, 3))
-    return WireframeMesh(vertices, segments)
+    return _extrude_outline(vertices, segments, height=26.0)
 
 
 def create_abyssal_crown_mesh() -> WireframeMesh:
@@ -438,7 +509,7 @@ def create_abyssal_crown_mesh() -> WireframeMesh:
     for i in range(crown_vertices):
         segments.append((crown_start + i, crown_start + ((i + 3) % crown_vertices)))
     segments.extend([(4, crown_start), (5, crown_start + 1), (6, crown_start + 2), (7, crown_start + 3)])
-    return WireframeMesh(vertices, segments)
+    return _extrude_outline(vertices, segments, height=28.0)
 
 
 def create_oblivion_spire_mesh() -> WireframeMesh:
@@ -458,4 +529,4 @@ def create_oblivion_spire_mesh() -> WireframeMesh:
     segments.extend([(0, 4), (1, 5), (4, 5), (4, 6), (5, 7), (6, 7)])
     segments.extend([(4, 8), (5, 9), (8, 9)])
     segments.append((2, 3))
-    return WireframeMesh(vertices, segments)
+    return _extrude_outline(vertices, segments, height=34.0)

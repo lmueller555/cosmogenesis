@@ -5,7 +5,9 @@ from typing import Dict, Optional, Tuple
 
 from OpenGL import GL as gl
 
-from game.camera import Camera2D
+import numpy as np
+
+from game.camera import Camera3D
 from game.world import World
 from .opengl_context import LINE_COLOR
 from .wireframe_primitives import (
@@ -53,18 +55,19 @@ class WireframeRenderer:
     def draw_world(
         self,
         world: World,
-        camera: Camera2D,
+        camera: Camera3D,
         *,
         selection_box: Optional[Tuple[Tuple[float, float], Tuple[float, float]]] = None,
     ) -> None:
-        gl.glClear(gl.GL_COLOR_BUFFER_BIT)
+        gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+        self._apply_camera(camera)
 
         for planetoid in world.planetoids:
             scale = planetoid.radius / 60.0
-            self._draw_mesh(self.planetoid_mesh, planetoid.position, scale, camera)
+            self._draw_mesh(self.planetoid_mesh, planetoid.position, scale)
 
         for base in world.bases:
-            self._draw_mesh(self.astral_citadel_mesh, base.position, 1.0, camera)
+            self._draw_mesh(self.astral_citadel_mesh, base.position, 1.0)
 
         for ship in world.ships:
             mesh = self.ship_meshes.get(ship.definition.name)
@@ -77,35 +80,48 @@ class WireframeRenderer:
                 color = self.enemy_color
             if ship in world.selected_ships:
                 color = self.selection_color
-            self._draw_mesh(mesh, ship.position, scale, camera, color=color)
+            self._draw_mesh(mesh, ship.position, scale, color=color)
 
         if selection_box is not None:
-            self._draw_screen_rect(selection_box[0], selection_box[1])
+            self._draw_screen_rect(selection_box[0], selection_box[1], camera.viewport_size)
 
     def _draw_mesh(
         self,
         mesh: WireframeMesh,
         position: Tuple[float, float],
         scale: float,
-        camera: Camera2D,
         *,
         color: Tuple[float, float, float, float] = LINE_COLOR,
+        elevation: float = 0.0,
     ) -> None:
         gl.glColor4f(*color)
         gl.glBegin(gl.GL_LINES)
         for start_index, end_index in mesh.segments:
-            sx, sy = mesh.vertices[start_index]
-            ex, ey = mesh.vertices[end_index]
+            sx, sy, sz = mesh.vertices[start_index]
+            ex, ey, ez = mesh.vertices[end_index]
 
-            start_world = (position[0] + sx * scale, position[1] + sy * scale)
-            end_world = (position[0] + ex * scale, position[1] + ey * scale)
+            start_world = (
+                position[0] + sx * scale,
+                elevation + sy * scale,
+                position[1] + sz * scale,
+            )
+            end_world = (
+                position[0] + ex * scale,
+                elevation + ey * scale,
+                position[1] + ez * scale,
+            )
 
-            start_screen = camera.world_to_screen(start_world)
-            end_screen = camera.world_to_screen(end_world)
-
-            gl.glVertex2f(*start_screen)
-            gl.glVertex2f(*end_screen)
+            gl.glVertex3f(*start_world)
+            gl.glVertex3f(*end_world)
         gl.glEnd()
+
+    def _apply_camera(self, camera: Camera3D) -> None:
+        projection = camera.projection_matrix()
+        view = camera.view_matrix()
+        gl.glMatrixMode(gl.GL_PROJECTION)
+        gl.glLoadMatrixf(np.transpose(projection).flatten())
+        gl.glMatrixMode(gl.GL_MODELVIEW)
+        gl.glLoadMatrixf(np.transpose(view).flatten())
 
     @staticmethod
     def _ship_scale_for(ship_class: str) -> float:
@@ -125,11 +141,22 @@ class WireframeRenderer:
         self,
         corner_a: Tuple[float, float],
         corner_b: Tuple[float, float],
+        viewport_size: Tuple[int, int],
     ) -> None:
         min_x = min(corner_a[0], corner_b[0])
         max_x = max(corner_a[0], corner_b[0])
         min_y = min(corner_a[1], corner_b[1])
         max_y = max(corner_a[1], corner_b[1])
+
+        width, height = viewport_size
+        gl.glMatrixMode(gl.GL_PROJECTION)
+        gl.glPushMatrix()
+        gl.glLoadIdentity()
+        gl.glOrtho(0, width, height, 0, -1, 1)
+        gl.glMatrixMode(gl.GL_MODELVIEW)
+        gl.glPushMatrix()
+        gl.glLoadIdentity()
+        gl.glDisable(gl.GL_DEPTH_TEST)
 
         gl.glColor4f(*self.selection_color)
         gl.glBegin(gl.GL_LINE_LOOP)
@@ -138,3 +165,9 @@ class WireframeRenderer:
         gl.glVertex2f(max_x, max_y)
         gl.glVertex2f(min_x, max_y)
         gl.glEnd()
+
+        gl.glEnable(gl.GL_DEPTH_TEST)
+        gl.glPopMatrix()
+        gl.glMatrixMode(gl.GL_PROJECTION)
+        gl.glPopMatrix()
+        gl.glMatrixMode(gl.GL_MODELVIEW)
