@@ -30,6 +30,7 @@ class World:
     resource_income_rate: float = 0.0  # Updated each tick for UI feedback
     research_manager: ResearchManager = field(default_factory=ResearchManager)
     visibility: VisibilityGrid = field(init=False, repr=False)
+    player_faction: str = "player"
 
     # TODO: Extend fog-of-war to account for enemy sensors and neutral factions.
 
@@ -86,6 +87,19 @@ class World:
 
         base.queue_ship(ship_name)
         self.resources -= definition.resource_cost
+        return True
+
+    def planetoids_controlled_by(self, faction: str) -> List[Planetoid]:
+        """Return a list of planetoids currently owned by ``faction``."""
+
+        return [planetoid for planetoid in self.planetoids if planetoid.controller == faction]
+
+    def set_planetoid_controller(self, planetoid: Planetoid, faction: str) -> bool:
+        """Assign ``planetoid`` to ``faction``; returns ``True`` if world owns the node."""
+
+        if planetoid not in self.planetoids:
+            return False
+        planetoid.set_controller(faction)
         return True
 
     # ------------------------------------------------------------------
@@ -222,12 +236,15 @@ class World:
     def _resource_income_per_second(self) -> float:
         """Compute the passive resource income for the current tick."""
 
-        # TODO: incorporate control state so only owned planetoids/facilities pay out.
         if not self.planetoids:
             return 0.0
 
+        controlled_planetoids = self.planetoids_controlled_by(self.player_faction)
+        if not controlled_planetoids:
+            return 0.0
+
         planetoid_income = 0.0
-        for planetoid in self.planetoids:
+        for planetoid in controlled_planetoids:
             # ``resource_yield`` is interpreted as resources per minute per guidance.
             planetoid_income += planetoid.resource_yield / 60.0
 
@@ -281,6 +298,7 @@ def create_initial_world() -> World:
 
     planetoid = Planetoid(position=(0.0, 0.0), radius=90.0, resource_yield=120)
     world.planetoids.append(planetoid)
+    world.set_planetoid_controller(planetoid, world.player_faction)
 
     base = Base(position=(160.0, 0.0))
     world.bases.append(base)
