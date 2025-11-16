@@ -582,7 +582,11 @@ class World:
         if base is None:
             self.pending_construction = None
             return False
-        allowed, _ = self.worker_construction_status(worker, definition)
+        # ``worker_construction_status`` marks the worker as busy once placement begins,
+        # so reusing it here would immediately fail the check. Instead, ensure the
+        # hosting base can still support the facility and that resources are
+        # available without considering the worker's transient busy state.
+        allowed, _ = self.facility_construction_status(base, definition)
         if not allowed:
             self.pending_construction = None
             return False
