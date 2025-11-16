@@ -261,6 +261,20 @@ class ResearchManager:
             self._accumulate_bonus(multipliers, bonus.attribute, bonus.amount)
         return multipliers
 
+    def economy_bonus(self, *, target: str, attribute: str) -> float:
+        """Aggregate economy modifiers for ``target``/``attribute`` combinations."""
+
+        bonus_amount = 0.0
+        for bonus in self._completed_bonuses():
+            if bonus.scope != "economy":
+                continue
+            if bonus.target not in ("*", target):
+                continue
+            if bonus.attribute != attribute:
+                continue
+            bonus_amount += bonus.amount
+        return bonus_amount
+
 
 # ----------------------------------------------------------------------
 # Canonical node registry sourced from `research_guidance`.

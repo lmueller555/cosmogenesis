@@ -194,10 +194,13 @@ class UIPanelRenderer:
 
         self._draw_text(cursor_x, cursor_y, "Research Console", self._context_text)
         cursor_y += 26
+        income_suffix = ""
+        if world.resource_income_rate > 0.0:
+            income_suffix = f" (+{world.resource_income_rate:.1f}/s)"
         self._draw_text(
             cursor_x,
             cursor_y,
-            f"Resources: {world.resources:.0f}",
+            f"Resources: {world.resources:.0f}{income_suffix}",
             self._muted_text,
         )
         cursor_y += 24

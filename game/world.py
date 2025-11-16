@@ -25,12 +25,18 @@ class World:
     ships: List[Ship] = field(default_factory=list)
     selected_ships: List[Ship] = field(default_factory=list)
     resources: float = 20_000.0
+    resource_income_rate: float = 0.0  # Updated each tick for UI feedback
     research_manager: ResearchManager = field(default_factory=ResearchManager)
 
     # TODO: Track fog-of-war state, radar reveals, and additional entity types.
 
     def update(self, dt: float) -> None:
         """Advance simulation forward by ``dt`` seconds."""
+
+        income_per_second = self._resource_income_per_second()
+        self.resource_income_rate = income_per_second
+        if income_per_second > 0.0 and dt > 0.0:
+            self.resources += income_per_second * dt
 
         for ship in self.ships:
             ship.update(dt)
@@ -170,6 +176,27 @@ class World:
             self._apply_ship_research(ship)
         for base in self.bases:
             self._apply_base_research(base)
+
+    def _resource_income_per_second(self) -> float:
+        """Compute the passive resource income for the current tick."""
+
+        # TODO: incorporate control state so only owned planetoids/facilities pay out.
+        if not self.planetoids:
+            return 0.0
+
+        planetoid_income = 0.0
+        for planetoid in self.planetoids:
+            # ``resource_yield`` is interpreted as resources per minute per guidance.
+            planetoid_income += planetoid.resource_yield / 60.0
+
+        if planetoid_income <= 0.0:
+            return 0.0
+
+        bonus = self.research_manager.economy_bonus(
+            target="planetoid_income", attribute="resource_rate"
+        )
+        multiplier = 1.0 + bonus
+        return planetoid_income * multiplier
 
 
 def create_initial_world() -> World:
