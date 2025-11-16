@@ -172,7 +172,13 @@ class WireframeRenderer:
                 color = self.enemy_color
             if ship in world.selected_ships:
                 color = self.selection_color
-            self._draw_mesh(mesh, ship.position, scale, color=color)
+            self._draw_mesh(
+                mesh,
+                ship.position,
+                scale,
+                color=color,
+                rotation_degrees=ship.rotation,
+            )
 
         self._draw_beam_visuals(world)
 
@@ -190,22 +196,26 @@ class WireframeRenderer:
         *,
         color: Tuple[float, float, float, float] = LINE_COLOR,
         elevation: float = 0.0,
+        rotation_degrees: float = 0.0,
     ) -> None:
         gl.glColor4f(*color)
         gl.glBegin(gl.GL_LINES)
+        rad = math.radians(rotation_degrees)
+        cos_theta = math.cos(rad)
+        sin_theta = math.sin(rad)
         for start_index, end_index in mesh.segments:
             sx, sy, sz = mesh.vertices[start_index]
             ex, ey, ez = mesh.vertices[end_index]
 
             start_world = (
-                position[0] + sx * scale,
+                position[0] + (sx * cos_theta - sz * sin_theta) * scale,
                 elevation + sy * scale,
-                position[1] + sz * scale,
+                position[1] + (sx * sin_theta + sz * cos_theta) * scale,
             )
             end_world = (
-                position[0] + ex * scale,
+                position[0] + (ex * cos_theta - ez * sin_theta) * scale,
                 elevation + ey * scale,
-                position[1] + ez * scale,
+                position[1] + (ex * sin_theta + ez * cos_theta) * scale,
             )
 
             gl.glVertex3f(*start_world)
