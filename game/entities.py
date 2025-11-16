@@ -102,6 +102,21 @@ class Base(Entity):
 
 
 @dataclass
+class Facility(Entity):
+    """Represents a constructed facility that gates tech trees."""
+
+    facility_type: str
+    name: str
+    host_base: Optional[Base] = None
+    online: bool = True
+
+    def set_online(self, online: bool) -> None:
+        """Toggle operational status; ``World`` informs ``ResearchManager``."""
+
+        self.online = online
+
+
+@dataclass
 class Ship(Entity):
     """Runtime instance of a ship hull from `ship_guidance`."""
 
