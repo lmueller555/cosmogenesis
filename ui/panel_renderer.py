@@ -9,7 +9,7 @@ import pygame
 from OpenGL import GL as gl
 
 from game.camera import Camera3D
-from game.entities import Base, Ship
+from game.entities import Base, Ship, Facility
 from game.research import ResearchAvailability, ResearchNode
 from game.world import World
 from game.visibility import VisibilityGrid
@@ -281,7 +281,7 @@ class UIPanelRenderer:
         )
         cursor_y += 24
 
-        cursor_y = self._draw_facility_section(world, cursor_x, cursor_y, world.selected_base)
+        cursor_y = self._draw_facility_overview(world, cursor_x, cursor_y, base)
         cursor_y += 18
         cursor_y = self._draw_research_section(world, rect, cursor_x, cursor_y)
         cursor_y += 18
@@ -290,6 +290,44 @@ class UIPanelRenderer:
         self._draw_construction_section(
             world, rect, cursor_x, cursor_y, base
         )
+
+    def _draw_facility_overview(
+        self, world: World, cursor_x: float, cursor_y: float, base: Optional[Base]
+    ) -> float:
+        self._draw_text(cursor_x, cursor_y, "Operational Facilities", self._context_text)
+        cursor_y += 24
+
+        if base is None:
+            self._draw_text(cursor_x, cursor_y, "No operational base.", self._muted_text)
+            cursor_y += 22
+            return cursor_y
+
+        facilities = sorted(
+            world.facilities_for_base(base),
+            key=lambda facility: facility.name,
+        )
+        if not facilities:
+            self._draw_text(cursor_x, cursor_y, "No facilities online yet.", self._muted_text)
+            cursor_y += 22
+            return cursor_y
+
+        for facility in facilities:
+            cursor_y = self._draw_facility_overview_entry(cursor_x, cursor_y, facility)
+        return cursor_y
+
+    def _draw_facility_overview_entry(
+        self, cursor_x: float, cursor_y: float, facility: Facility
+    ) -> float:
+        status = "Online" if facility.online else "Offline"
+        status_color = self._text_color if facility.online else self._muted_text
+        self._draw_text(cursor_x, cursor_y, facility.name, self._text_color)
+        cursor_y += 20
+        self._draw_text(cursor_x, cursor_y, status, status_color)
+        cursor_y += 18
+        summary = facility.definition.description
+        self._draw_text(cursor_x + 12, cursor_y, summary, self._muted_text)
+        cursor_y += 28
+        return cursor_y
 
     def _draw_ship_context(self, world: World, cursor_x: float, cursor_y: float) -> None:
         self._draw_text(cursor_x, cursor_y, "Ship Abilities", self._context_text)
@@ -913,25 +951,4 @@ class UIPanelRenderer:
     def _ship_class_order(ship_class: str) -> int:
         order = {"Strike": 0, "Escort": 1, "Line": 2, "Capital": 3}
         return order.get(ship_class, 99)
-
-    def _draw_facility_section(
-        self,
-        world: World,
-        cursor_x: float,
-        cursor_y: float,
-        base: Optional[Base],
-    ) -> float:
-        self._draw_text(cursor_x, cursor_y, "Operational Facilities", self._context_text)
-        cursor_y += 24
-        facilities = world.facilities_for_base(base)
-        if not facilities:
-            self._draw_text(cursor_x, cursor_y, "No facilities constructed.", self._muted_text)
-            return cursor_y + 22
-        for facility in facilities:
-            display_name = facility.name or world.facility_display_name(facility.facility_type)
-            state = "Online" if facility.online else "Offline"
-            color = self._text_color if facility.online else self._muted_text
-            self._draw_text(cursor_x, cursor_y, f"{display_name}: {state}", color)
-            cursor_y += 20
-        return cursor_y
 
