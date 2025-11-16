@@ -106,6 +106,7 @@ class World:
         for ship in self.ships:
             ship.update(dt)
             ship.tick_weapon_cooldown(dt)
+            ship.tick_passive_repair(dt)
 
         self._resolve_ship_collisions(dt)
 
@@ -127,8 +128,11 @@ class World:
             completed = base.update(dt)
             for ship_definition in completed:
                 self._spawn_ship_from_base(base, ship_definition)
+            base.tick_passive_repair(dt)
 
         self._update_facility_construction(dt)
+        for facility in self.facilities:
+            facility.tick_passive_repair(dt)
         self._update_combat(dt)
         self._update_beam_visuals(dt)
         completed_research = self.research_manager.update(dt)
