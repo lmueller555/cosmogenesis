@@ -14,7 +14,8 @@ COSMOGENESIS – `game_guidance`
 2. **Relationship to other guidance.**
 
    * Ship details (stats, abilities, variants, lore, wireframe design) are defined in **`ship_guidance`**, which is also authoritative and must not be altered or replaced.
-   * Future documents (e.g., `upgrade_guidance`, `tech_guidance`, etc.) may be created **only by the human designer**, not by you. You must not invent such documents yourself.
+   * Research trees and tech nodes are defined in **`research_guidance`**, which is also authoritative and must not be altered or replaced.
+   * Future documents (e.g., `upgrade_guidance`, `tech_guidance`, etc.) may be created **only by the human designer**, not by you. You must not invent these documents yourself.
 
 3. **No new major systems without explicit instructions.**
 
@@ -42,6 +43,15 @@ COSMOGENESIS – `game_guidance`
 * Small, simple unit silhouettes focused on **clarity and performance**.
 * Clean RTS UI with readable data and minimal clutter.
 
+**Camera & viewpoint:**
+
+* The game is played from a **top-down strategic viewpoint**, but:
+
+  * The world and all objects are represented as **3D wireframe models**.
+  * The camera is a **3D camera positioned above and slightly behind the scene**, at a shallow angle so ships and structures visibly have 3D depth.
+  * The camera can **zoom in and out** using the **mouse scroll wheel**.
+* Movement and gameplay are effectively constrained to a mostly flat sector plane, but visuals are true 3D, viewed from an angled top-down perspective.
+
 ---
 
 ## C. Technology & Rendering
@@ -61,9 +71,22 @@ COSMOGENESIS – `game_guidance`
 
      * Objects are built from line segments forming geometric silhouettes.
      * No filled polygons, textures, complex shading, or sprite art; just lines.
-   * Scene is mostly **2D top-down or slight 2.5D** projection.
+   * **3D world, angled top-down camera.**
 
-     * Choose one projection and keep it consistent. Do **not** change the camera paradigm without explicit instruction.
+     * All major game entities (ships, bases, planetoids, asteroids, facilities) must be defined as **3D wireframe geometry** in world space (x, y, z).
+     * Movement and gameplay can be treated as mostly 2D on a plane (e.g., z = 0 for ship movement), but geometry and camera are fully 3D.
+     * The camera is a **3D perspective or orthographic camera** (designer’s choice, but must be consistent) positioned:
+
+       * Above the sector, looking slightly “down and forward”, not perfectly vertical.
+       * With a view direction that makes the 3D shapes clearly readable (e.g., a shallow tilt so ships/stations visibly have height).
+   * **Camera zoom:**
+
+     * The camera must support smooth **zoom in/out using the mouse scroll wheel**.
+     * Zoom behavior may be implemented as:
+
+       * Adjusting camera distance from the sector plane, or
+       * Adjusting the projection parameters (e.g., field of view or orthographic size),
+       * But must remain visually consistent and must not change the fundamental camera angle.
 
 3. **Performance Goals**
 
@@ -73,6 +96,7 @@ COSMOGENESIS – `game_guidance`
 
      * Reuse vertex buffers for repeated ship/facility types.
      * Avoid regenerating geometry every frame.
+   * Camera transforms must be done efficiently using standard model–view–projection matrices; avoid per-vertex Python computation in the main loop.
 
 ---
 
@@ -123,8 +147,8 @@ A typical match of Cosmogenesis:
 1. **Sector**
 
    * A **single, large space sector** serves as the battlefield.
-   * Map is significantly larger than the screen’s view; camera pans over the sector.
-   * Coordinates use a consistent in-game unit system.
+   * Map is significantly larger than the screen’s view; the camera pans over the sector.
+   * Coordinates use a consistent in-game unit system (3D world space), typically with movement primarily on a sector plane (e.g., z = 0 for ship positions).
 
 2. **Planetoids**
 
@@ -134,12 +158,14 @@ A typical match of Cosmogenesis:
 
      * Resource yield characteristics (high compared to asteroids).
      * A static position, important for pathfinding and building placement.
+   * Planetoids are represented as **3D wireframe spheres or spheroids** (low-poly), projected through the angled top-down camera.
 
 3. **Asteroids**
 
    * Small celestial bodies scattered across the sector.
    * Provide **small supplementary resources**.
    * Useful for early income and as minor points of interest.
+   * Represented as small 3D wireframe rocks (simple irregular polyhedra or low-poly spheres).
 
 4. **Bases**
 
@@ -148,6 +174,7 @@ A typical match of Cosmogenesis:
      * Anchors near a planetoid.
      * Hosts build queues for ships and may host or visually attach **modules/facilities** as tech progresses.
    * Additional bases can be built at other planetoids to increase mining capacity and ship production.
+   * Bases are 3D wireframe structures whose geometry must be consistent with `ship_guidance` and visually readable from the angled top-down camera.
 
 5. **Facilities & Modules (Physical Structures)**
 
@@ -158,7 +185,7 @@ A typical match of Cosmogenesis:
      * Have their own **resource_cost, build_time, health, and shields** (and may optionally have armor or other stats if later defined).
    * Facilities can be:
 
-     * Visually represented as additional wireframe structures integrated into or next to the base.
+     * Visually represented as additional 3D wireframe structures integrated into or next to the base.
      * **Targeted and destroyed** by enemy units.
 
        * When destroyed, they **cut off access to their associated tech and research trees** until rebuilt (see Section J.4 for details).
@@ -251,6 +278,7 @@ A typical match of Cosmogenesis:
 
    * Multiple ships per class with distinct roles (e.g., interceptor, recon, support, artillery).
    * All of these are specified in `ship_guidance`. The LLM coder must not add or remove variants without instruction.
+   * All ships must have 3D wireframe hulls designed to remain recognizable from the angled top-down camera at various zoom levels.
 
 ---
 
@@ -269,6 +297,7 @@ A typical match of Cosmogenesis:
 
      * Enemy ships and structures are fully visible.
      * Fog of war is cleared.
+   * Visual range should be implemented in world space (3D), but typically treated as a radius on the sector plane, consistent with the top-down strategic view.
 
 3. **Radar Range**
 
@@ -287,6 +316,7 @@ A typical match of Cosmogenesis:
 
      * A **mini-map** or overview display.
      * Optional on-screen indicators.
+   * The mini-map may be a 2D projection of the 3D world (e.g., x–y plane), independent of the camera angle.
 
 ---
 
@@ -298,20 +328,37 @@ A typical match of Cosmogenesis:
 
      * Left-click to select individual ships.
      * Click-drag to select multiple ships with a selection box.
-   * Selected ships are visually highlighted (e.g., brighter wireframe, small bounding shape, or selection circle).
+   * Selected ships are visually highlighted (e.g., brighter wireframe, small bounding shape, or selection circle), clearly visible from the angled top-down view.
 
 2. **Movement & Waypoints**
 
-   * Player selects ships then **right-clicks (or equivalent)** to set a waypoint.
+   * Player selects ships then **right-clicks (or equivalent)** on the sector plane to set a waypoint.
    * Ships automatically path toward the waypoint.
    * Support for multiple waypoints (queueing) can be added; at minimum a single active waypoint per command.
+   * Waypoints are expressed in world coordinates on the sector plane and rendered in the 3D scene in a way that is legible from the camera angle.
 
 3. **Camera Control**
 
    * Camera pans across the sector via:
 
-     * Keyboard (e.g., WASD/arrow keys).
-     * Mouse edge-scrolling or middle-mouse dragging (if implemented).
+     * Keyboard (e.g., WASD/arrow keys), or
+     * Other reasonable bindings (e.g., middle-mouse drag) as long as they are documented in code comments.
+   * Camera orientation:
+
+     * The camera must remain **top-down but slightly behind the scene**, at a consistent shallow tilt so 3D geometry is visible.
+     * You must not switch to radically different cameras (e.g., first-person, side-on) without explicit human instruction.
+   * **Zooming:**
+
+     * The camera must support **zooming in and out via the mouse scroll wheel**.
+     * Zooming should:
+
+       * Allow tactical overview (zoomed out) and close-up inspection of ships/stations (zoomed in).
+       * Maintain the same general viewing angle (tilt) while adjusting distance or projection parameters.
+     * Implementation approach (distance vs. FOV/ortho size) is up to you, but must be:
+
+       * Smooth,
+       * Performance-conscious,
+       * Clearly documented in comments.
 
 4. **HUD / UI Elements**
 
@@ -322,6 +369,7 @@ A typical match of Cosmogenesis:
      * Build panel when a base or facility that can produce units is selected.
      * Mini-map with fog of war, radar blips, and base/ship icons.
    * Tech/research trees must have a dedicated UI section (see J.4).
+   * UI must remain functional and readable regardless of camera zoom level.
 
 ---
 
@@ -339,7 +387,7 @@ A typical match of Cosmogenesis:
   * Consumes resources on queueing (or progressively, if explicitly implemented that way—use one consistent approach).
 * When build_time completes:
 
-  * The ship is spawned near the producing structure (base or shipyard).
+  * The ship is spawned near the producing structure (base or shipyard) in 3D world space on/near the sector plane.
   * The ship typically appears idle or moves to a default rally point.
 
 ### J.2 Base Construction / Expansion
@@ -351,7 +399,7 @@ A typical match of Cosmogenesis:
 * Bases may have:
 
   * **Upgrade levels** that add module slots, shipyard capability, or improved defenses.
-  * Visual representation of upgrades via additional wireframe structures on/around the base model.
+  * Visual representation of upgrades via additional 3D wireframe structures on/around the base model (rings, gantries, towers, etc.), clearly visible from the angled top-down camera.
 
 ### J.3 Upgrades (Stat & Ability Enhancements)
 
@@ -451,7 +499,7 @@ Facilities/modules are **buildable, destructible structures** tied to tech and p
    * Facilities are built:
 
      * On the base station itself (visually attached as modules), or
-     * As nearby structures in the vicinity of a base or planetoid.
+     * As nearby structures in the vicinity of a base or planetoid, positioned in 3D world space but functionally associated with that base.
    * Ownership is tied to the player’s faction and associated base.
 
 3. **Destruction**
@@ -464,11 +512,11 @@ Facilities/modules are **buildable, destructible structures** tied to tech and p
 
 4. **Visual Integration**
 
-   * Facilities and modules must be represented with **wireframe geometry**:
+   * Facilities and modules must be represented with **3D wireframe geometry**:
 
      * Small ring segments, spires, gantries, research towers, etc.
      * Their presence should visually change/augment the Base silhouette but stay low-poly.
-   * Upgraded or specialized facilities may add additional line segments, mini-rings, or spires to represent enhanced capability.
+   * Upgraded or specialized facilities may add additional line segments, mini-rings, or spires to represent enhanced capability, always readable from the angled top-down camera and at different zoom levels.
 
 ---
 
@@ -516,12 +564,14 @@ Facilities/modules are **buildable, destructible structures** tied to tech and p
 
      * Pre-create VAOs/VBOs for each ship/facility class and reuse per instance.
    * Minimize per-frame Python overhead in draw calls.
+   * All transformations into camera space must be handled efficiently using matrix math on the GPU where possible.
 
 2. **OpenGL Rendering**
 
    * Use GPU-side buffers (VBOs/IBOs).
    * Batch objects when possible (group by ship/facility type or shader state).
    * Avoid per-frame geometry recomputation; update transforms only.
+   * Camera zoom and angle changes must be handled via matrices, not via regenerating geometry.
 
 3. **Game Logic**
 
@@ -547,12 +597,16 @@ Any such expansion requires a human-authored document (e.g., `campaign_guidance`
 ## N. Final Reminder to the LLM Coder
 
 * You **must not** modify this `game_guidance` document or create alternate guidance documents.
-* You **must** follow this document and `ship_guidance` when implementing Cosmogenesis.
+* You **must** follow this document, `ship_guidance`, and `research_guidance` when implementing Cosmogenesis.
 * Tech and research systems, facilities, and modules must behave as described here:
 
   * Built using resources
   * Have resource_cost, build_time, health, and shields
   * Are destructible and directly gate access to their tech trees until rebuilt
+* The camera must:
+
+  * Be a **3D top-down, slightly angled camera** over a 3D wireframe world.
+  * Support **zooming via the mouse scroll wheel** while maintaining a consistent overall angle.
 * When in doubt:
 
   1. Choose the simplest implementation that aligns with this guidance, and
