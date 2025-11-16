@@ -80,6 +80,8 @@ class WireframeRenderer:
             self._draw_mesh(self.astral_citadel_mesh, base.position, 1.0)
 
         for ship in world.ships:
+            if ship.faction != "player" and not world.visibility.is_visual(ship.position):
+                continue
             mesh = self.ship_meshes.get(ship.definition.name)
             if mesh is None:
                 # TODO: add visual fallback for ships without bespoke wireframes.
