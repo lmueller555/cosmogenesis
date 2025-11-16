@@ -17,7 +17,8 @@ class UILayout:
 
     window_size: Size
     gameplay_ratio: float = 0.8
-    context_ratio: float = 0.25
+    selection_ratio: float = 0.45
+    minimap_ratio: float = 0.25
 
     def update(self, window_size: Size) -> None:
         self.window_size = window_size
@@ -35,44 +36,49 @@ class UILayout:
         return pygame.Rect(0, gameplay_height, width, height - gameplay_height)
 
     @property
-    def context_rect(self) -> pygame.Rect:
+    def minimap_column_rect(self) -> pygame.Rect:
         panel = self.ui_panel_rect
-        width = int(panel.width * self.context_ratio)
+        width = int(panel.width * self.minimap_ratio)
+        width = max(0, min(width, panel.width))
         return pygame.Rect(panel.right - width, panel.top, width, panel.height)
 
     @property
     def selection_rect(self) -> pygame.Rect:
         panel = self.ui_panel_rect
-        context = self.context_rect
-        return pygame.Rect(panel.left, panel.top, context.left - panel.left, panel.height)
+        minimap = self.minimap_column_rect
+        selection_width = int(panel.width * self.selection_ratio)
+        max_width = max(0, panel.width - minimap.width)
+        selection_width = max(0, min(selection_width, max_width))
+        return pygame.Rect(panel.left, panel.top, selection_width, panel.height)
+
+    @property
+    def context_rect(self) -> pygame.Rect:
+        panel = self.ui_panel_rect
+        minimap = self.minimap_column_rect
+        selection = self.selection_rect
+        left = selection.right
+        right = minimap.left
+        width = max(0, right - left)
+        return pygame.Rect(left, panel.top, width, panel.height)
 
     @property
     def minimap_rect(self) -> pygame.Rect:
         """Return a square anchored to the bottom-right HUD corner for the minimap."""
 
-        context = self.context_rect
+        column = self.minimap_column_rect
         panel = self.ui_panel_rect
         padding = 12
-        gap = 8  # Keep some breathing room between the context panel and minimap
 
-        if panel.height <= 0 or context.width <= 0:
+        if panel.height <= 0 or column.width <= 0:
             return pygame.Rect(panel.right, panel.bottom, 0, 0)
 
-        max_square = max(32, context.width - 2 * padding)
-        desired_context = int(panel.height * 0.45)
-        min_context_height = max(96, desired_context)
-        max_context_height = max(0, panel.height - gap - padding - 64)
-        if max_context_height > 0:
-            min_context_height = min(min_context_height, max_context_height)
-        else:
-            min_context_height = 0
-
-        available_for_minimap = panel.height - gap - padding - min_context_height
-        available_for_minimap = max(64, available_for_minimap)
-        size = min(max_square, available_for_minimap)
-
-        left = panel.right - size - padding
-        top = panel.bottom - size - padding
+        usable_width = max(0, column.width - 2 * padding)
+        usable_height = max(0, column.height - 2 * padding)
+        size = min(usable_width, usable_height)
+        size = max(64, size)
+        size = min(size, column.width, column.height)
+        left = column.right - size - padding
+        top = column.bottom - size - padding
         return pygame.Rect(left, top, size, size)
 
     def is_in_gameplay(self, point: Vec2) -> bool:

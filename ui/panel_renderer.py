@@ -96,6 +96,8 @@ class UIPanelRenderer:
         self._research_buttons: List[ResearchButton] = []
         self._production_buttons: List[ProductionButton] = []
         self._facility_buttons: List[FacilityButton] = []
+        self._context_scroll: float = 0.0
+        self._context_content_height: float = 0.0
 
     def draw(self, world: World, camera: Camera3D, layout: UILayout) -> None:
         self._research_buttons.clear()
@@ -117,14 +119,17 @@ class UIPanelRenderer:
         self._draw_selection_summary(world, layout.selection_rect)
 
         clip_rect = self._context_clip_rect(layout)
-        if clip_rect is None:
-            self._draw_context_panel(world, layout.context_rect)
-        else:
-            self._with_scissor(
-                clip_rect,
-                layout.window_size,
-                lambda: self._draw_context_panel(world, layout.context_rect),
+
+        def draw_context() -> None:
+            content_height = self._draw_context_panel(
+                world, layout.context_rect, self._context_scroll
             )
+            self._update_context_scroll_bounds(layout.context_rect, content_height)
+
+        if clip_rect is None:
+            draw_context()
+        else:
+            self._with_scissor(clip_rect, layout.window_size, draw_context)
 
         self._draw_minimap(world, camera, layout.minimap_rect)
 
@@ -196,6 +201,9 @@ class UIPanelRenderer:
 
         context = layout.context_rect
         self._draw_rect_outline(context, (0.15, 0.18, 0.25, 1.0))
+
+        minimap_column = layout.minimap_column_rect
+        self._draw_rect_outline(minimap_column, (0.15, 0.18, 0.25, 1.0))
 
     def _draw_rect(self, rect: pygame.Rect, color: Tuple[float, float, float, float]) -> None:
         gl.glColor4f(*color)
@@ -317,15 +325,27 @@ class UIPanelRenderer:
         gl.glEnd()
         gl.glLineWidth(1.0)
 
+    def scroll_context(self, layout: UILayout, wheel_delta: float) -> None:
+        rect = layout.context_rect
+        if rect.height <= 0:
+            return
+        scroll_step = 48
+        max_scroll = max(0.0, self._context_content_height - rect.height)
+        desired = self._context_scroll - wheel_delta * scroll_step
+        self._context_scroll = min(max(0.0, desired), max_scroll)
+
+    def _update_context_scroll_bounds(
+        self, rect: pygame.Rect, content_height: float
+    ) -> None:
+        self._context_content_height = max(rect.height, content_height)
+        max_scroll = max(0.0, self._context_content_height - rect.height)
+        self._context_scroll = min(max(self._context_scroll, 0.0), max_scroll)
+
     def _context_clip_rect(self, layout: UILayout) -> Optional[pygame.Rect]:
-        context = layout.context_rect
-        minimap = layout.minimap_rect
-        gap = 8
-        available_height = minimap.top - gap - context.top
-        available_height = min(available_height, context.height)
-        if available_height <= 0:
+        rect = layout.context_rect
+        if rect.width <= 0 or rect.height <= 0:
             return None
-        return pygame.Rect(context.left, context.top, context.width, int(available_height))
+        return pygame.Rect(rect.left, rect.top, rect.width, rect.height)
 
     # ------------------------------------------------------------------
     # Selection summary
@@ -609,19 +629,24 @@ class UIPanelRenderer:
     # ------------------------------------------------------------------
     # Context panel placeholder
     # ------------------------------------------------------------------
-    def _draw_context_panel(self, world: World, rect: pygame.Rect) -> None:
+    def _draw_context_panel(
+        self, world: World, rect: pygame.Rect, scroll_offset: float
+    ) -> float:
         padding = 12
         cursor_x = rect.left + padding
-        cursor_y = rect.top + padding
+        start_y = rect.top + padding - scroll_offset
+        cursor_y = start_y
         selection_kind = self._context_selection_kind(world)
         if selection_kind == "base":
-            self._draw_base_context(world, rect, cursor_x, cursor_y)
+            cursor_y = self._draw_base_context(world, rect, cursor_x, cursor_y)
         elif selection_kind == "worker":
-            self._draw_worker_context(world, rect, cursor_x, cursor_y)
+            cursor_y = self._draw_worker_context(world, rect, cursor_x, cursor_y)
         elif selection_kind == "ship":
-            self._draw_ship_context(world, cursor_x, cursor_y)
+            cursor_y = self._draw_ship_context(world, cursor_x, cursor_y)
         else:
-            self._draw_no_selection_context(cursor_x, cursor_y)
+            cursor_y = self._draw_no_selection_context(cursor_x, cursor_y)
+        content_height = cursor_y - start_y + padding
+        return max(0.0, content_height)
 
     def _context_selection_kind(self, world: World) -> str:
         if world.selected_base is not None:
@@ -640,7 +665,7 @@ class UIPanelRenderer:
 
     def _draw_base_context(
         self, world: World, rect: pygame.Rect, cursor_x: float, cursor_y: float
-    ) -> None:
+    ) -> float:
         base = world.selected_base
         self._draw_text(cursor_x, cursor_y, "Astral Citadel Operations", self._context_text)
         cursor_y += 26
@@ -661,6 +686,7 @@ class UIPanelRenderer:
         cursor_y += 18
         cursor_y = self._draw_facility_section(world, rect, cursor_x, cursor_y, base)
         cursor_y += 18
+        return cursor_y
 
     def _draw_facility_overview(
         self, world: World, cursor_x: float, cursor_y: float, base: Optional[Base]
@@ -702,11 +728,12 @@ class UIPanelRenderer:
 
     def _draw_worker_context(
         self, world: World, rect: pygame.Rect, cursor_x: float, cursor_y: float
-    ) -> None:
+    ) -> float:
         worker = self._primary_worker(world)
         if worker is None:
             self._draw_text(cursor_x, cursor_y, "Select a worker drone.", self._muted_text)
-            return
+            cursor_y += 22
+            return cursor_y
         self._draw_text(cursor_x, cursor_y, f"{worker.name} Construction", self._context_text)
         cursor_y += 24
         income_suffix = ""
@@ -726,10 +753,9 @@ class UIPanelRenderer:
         cursor_y += 12
 
         if worker_pending and pending is not None:
-            self._draw_worker_pending_panel(rect, cursor_x, cursor_y, pending)
-            return
+            return self._draw_worker_pending_panel(rect, cursor_x, cursor_y, pending)
 
-        self._draw_worker_facility_palette(world, rect, cursor_x, cursor_y, worker)
+        return self._draw_worker_facility_palette(world, rect, cursor_x, cursor_y, worker)
 
     def _draw_worker_job_status(
         self, world: World, worker: Ship, cursor_x: float, cursor_y: float
@@ -786,7 +812,7 @@ class UIPanelRenderer:
         cursor_x: float,
         cursor_y: float,
         pending: "PendingFacilityPlacement",
-    ) -> None:
+    ) -> float:
         definition = pending.definition
         self._draw_text(cursor_x, cursor_y, f"Placing: {definition.name}", self._context_text)
         cursor_y += 24
@@ -833,6 +859,8 @@ class UIPanelRenderer:
             "Press ESC to cancel and return to the build list.",
             self._muted_text,
         )
+        cursor_y += 20
+        return cursor_y
 
     def _draw_worker_facility_palette(
         self,
@@ -841,7 +869,7 @@ class UIPanelRenderer:
         cursor_x: float,
         cursor_y: float,
         worker: Ship,
-    ) -> None:
+    ) -> float:
         self._draw_text(cursor_x, cursor_y, "Available Facilities", self._context_text)
         cursor_y += 26
         self._draw_text(
@@ -862,7 +890,7 @@ class UIPanelRenderer:
             max(0, int(palette_bottom - palette_area_top)),
         )
         if palette_rect.height <= 0 or palette_rect.width <= 0:
-            return
+            return cursor_y
 
         button_width = 156
         button_height = 168
@@ -906,6 +934,8 @@ class UIPanelRenderer:
                     context="worker",
                 )
             )
+
+        return max(cursor_y, start_y + total_height())
 
     def _draw_worker_facility_button(
         self,
@@ -967,7 +997,7 @@ class UIPanelRenderer:
         lines.append(current)
         return lines
 
-    def _draw_ship_context(self, world: World, cursor_x: float, cursor_y: float) -> None:
+    def _draw_ship_context(self, world: World, cursor_x: float, cursor_y: float) -> float:
         self._draw_text(cursor_x, cursor_y, "Ship Abilities", self._context_text)
         cursor_y += 24
         ship_count = len(world.selected_ships)
@@ -987,8 +1017,10 @@ class UIPanelRenderer:
             "TODO: Wire ship abilities/stances per ship_guidance.",
             self._muted_text,
         )
+        cursor_y += 22
+        return cursor_y
 
-    def _draw_no_selection_context(self, cursor_x: float, cursor_y: float) -> None:
+    def _draw_no_selection_context(self, cursor_x: float, cursor_y: float) -> float:
         self._draw_text(cursor_x, cursor_y, "Context Actions", self._context_text)
         cursor_y += 24
         self._draw_text(
@@ -1004,6 +1036,8 @@ class UIPanelRenderer:
             "Select ships to access tactical actions.",
             self._muted_text,
         )
+        cursor_y += 22
+        return cursor_y
 
     def _draw_research_section(
         self, world: World, rect: pygame.Rect, cursor_x: float, cursor_y: float
