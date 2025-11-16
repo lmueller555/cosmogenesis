@@ -48,12 +48,30 @@ class UILayout:
 
     @property
     def minimap_rect(self) -> pygame.Rect:
+        """Return a square anchored to the bottom-right HUD corner for the minimap."""
+
         context = self.context_rect
         panel = self.ui_panel_rect
         padding = 12
-        size = min(context.width - 2 * padding, panel.height - 2 * padding)
-        size = max(size, 32)
-        left = context.right - size - padding
+        gap = 8  # Keep some breathing room between the context panel and minimap
+
+        if panel.height <= 0 or context.width <= 0:
+            return pygame.Rect(panel.right, panel.bottom, 0, 0)
+
+        max_square = max(32, context.width - 2 * padding)
+        desired_context = int(panel.height * 0.45)
+        min_context_height = max(96, desired_context)
+        max_context_height = max(0, panel.height - gap - padding - 64)
+        if max_context_height > 0:
+            min_context_height = min(min_context_height, max_context_height)
+        else:
+            min_context_height = 0
+
+        available_for_minimap = panel.height - gap - padding - min_context_height
+        available_for_minimap = max(64, available_for_minimap)
+        size = min(max_square, available_for_minimap)
+
+        left = panel.right - size - padding
         top = panel.bottom - size - padding
         return pygame.Rect(left, top, size, size)
 
