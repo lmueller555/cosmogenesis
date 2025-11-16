@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
-from .entities import Ship
+from .entities import Base, Ship
 from .world import World
 
 Vec2 = Tuple[float, float]
@@ -76,17 +76,51 @@ def pick_ship(world: World, world_pos: Vec2, radius: float = 80.0) -> Optional[S
     return best_ship
 
 
+def pick_base(world: World, world_pos: Vec2, radius: float = 220.0) -> Optional[Base]:
+    """Return a nearby base if the cursor is close enough to its footprint."""
+
+    best_base: Optional[Base] = None
+    best_distance_sq = radius * radius
+    for base in world.bases:
+        if base.faction != world.player_faction:
+            continue
+        dx = base.position[0] - world_pos[0]
+        dy = base.position[1] - world_pos[1]
+        distance_sq = dx * dx + dy * dy
+        if distance_sq <= best_distance_sq:
+            best_distance_sq = distance_sq
+            best_base = base
+    return best_base
+
+
 def _add_to_selection(world: World, ship: Ship) -> None:
     if ship not in world.selected_ships:
         world.selected_ships.append(ship)
 
 
+def clear_selection(world: World) -> None:
+    """Clear every current selection target (ships, bases, facilities)."""
+
+    world.selected_ships.clear()
+    world.selected_base = None
+
+
 def select_single_ship(world: World, ship: Optional[Ship], *, additive: bool = False) -> None:
     """Replace or extend the current selection with ``ship`` if provided."""
     if not additive:
-        world.selected_ships.clear()
+        clear_selection(world)
+    else:
+        world.selected_base = None
     if ship is not None and _is_selectable(world, ship):
         _add_to_selection(world, ship)
+
+
+def select_base(world: World, base: Optional[Base]) -> None:
+    """Select ``base`` as the active structure, clearing ship selections."""
+
+    clear_selection(world)
+    if base is not None:
+        world.selected_base = base
 
 
 def select_ships_in_rect(
@@ -99,7 +133,9 @@ def select_ships_in_rect(
     """Select every ship whose position falls within the axis-aligned rectangle."""
 
     if not additive:
-        world.selected_ships.clear()
+        clear_selection(world)
+    else:
+        world.selected_base = None
 
     min_x = min(corner_a[0], corner_b[0])
     max_x = max(corner_a[0], corner_b[0])
@@ -111,3 +147,6 @@ def select_ships_in_rect(
             continue
         if min_x <= ship.position[0] <= max_x and min_y <= ship.position[1] <= max_y:
             _add_to_selection(world, ship)
+
+
+# TODO: Support mixed ship + structure selections once stance/ability commands exist.

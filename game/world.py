@@ -47,6 +47,7 @@ class World:
     ships: List[Ship] = field(default_factory=list)
     facilities: List[Facility] = field(default_factory=list)
     selected_ships: List[Ship] = field(default_factory=list)
+    selected_base: Base | None = None
     resources: float = 20_000.0
     resource_income_rate: float = 0.0  # Updated each tick for UI feedback
     research_manager: ResearchManager = field(default_factory=ResearchManager)

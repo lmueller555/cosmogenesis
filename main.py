@@ -8,7 +8,10 @@ import pygame
 from game.camera import Camera3D
 from game.selection import (
     SelectionDragState,
+    clear_selection,
+    pick_base,
     pick_ship,
+    select_base,
     select_ships_in_rect,
     select_single_ship,
 )
@@ -135,7 +138,14 @@ def run() -> None:
                         clamped = layout.clamp_to_gameplay(event.pos)
                         world_pos = camera.screen_to_world(clamped)
                         ship = pick_ship(world, world_pos)
-                        select_single_ship(world, ship, additive=additive)
+                        if ship is not None:
+                            select_single_ship(world, ship, additive=additive)
+                        else:
+                            base = pick_base(world, world_pos)
+                            if base is not None:
+                                select_base(world, base)
+                            elif not additive:
+                                clear_selection(world)
 
         handle_camera_input(camera, dt)
         world.update(dt)
