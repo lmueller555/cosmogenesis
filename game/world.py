@@ -519,10 +519,6 @@ def create_initial_world() -> World:
     # Pre-complete early nodes so the sandbox can showcase multiple hull classes.
     for node_id in [
         "SF_STRIKE_FUNDAMENTALS_I",
-        "SF_ESCORT_DESIGN_I",
-        "SF_ADVANCED_STRIKE_DOCTRINE",
-        "SF_ESCORT_HEAVY_FRAMES",
-        "FF_HEAVY_HULL_FABRICATION",
     ]:
         world.research_manager.force_complete(node_id)
 
@@ -578,10 +574,6 @@ def create_initial_world() -> World:
         definition_name = ["Spearling", "Daggerwing", "Sunlance"][idx]
         enemy_ship = Ship(position=pos, definition=get_ship_definition(definition_name), faction="enemy")
         world.ships.append(enemy_ship)
-
-    # Queue a few autonomous builds so the production loop is observable.
-    for ship_name in ["Spearling", "Wisp", "Sunlance"]:
-        world.queue_ship(base, ship_name)
 
     world.refresh_visibility()
 

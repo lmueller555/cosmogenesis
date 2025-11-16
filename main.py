@@ -102,6 +102,8 @@ def run() -> None:
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
                     if layout.is_in_gameplay(event.pos):
+                        if renderer.handle_spawn_ui_click(world, event.pos):
+                            continue
                         clamped = layout.clamp_to_gameplay(event.pos)
                         selection_drag.begin(clamped)
                     elif layout.is_in_minimap(event.pos):
