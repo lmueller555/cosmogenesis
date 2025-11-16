@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from .entities import Base, Planetoid, Ship
 from .ship_registry import ShipDefinition, get_ship_definition
+from .research import ResearchManager, ResearchNode
 
 Vec2 = Tuple[float, float]
 
@@ -19,6 +20,8 @@ class World:
     bases: List[Base] = field(default_factory=list)
     ships: List[Ship] = field(default_factory=list)
     selected_ships: List[Ship] = field(default_factory=list)
+    resources: float = 20_000.0
+    research_manager: ResearchManager = field(default_factory=ResearchManager)
 
     # TODO: Track fog-of-war state, radar reveals, and additional entity types.
 
@@ -35,12 +38,38 @@ class World:
                 self._spawn_ship_from_base(base, ship_definition)
 
         self._update_combat(dt)
+        completed_research = self.research_manager.update(dt)
+        if completed_research is not None:
+            # TODO: propagate stat bonuses / notifications once UI exists.
+            pass
 
     def issue_move_order(self, destination: Vec2) -> None:
         """Send every selected ship toward ``destination``."""
 
         for ship in self.selected_ships:
             ship.set_move_target(destination)
+
+    def try_start_research(self, node_id: str) -> bool:
+        """Attempt to start researching ``node_id`` using shared resources."""
+
+        node = self._node(node_id)
+        if node is None:
+            return False
+        if not self.research_manager.start(node_id, available_resources=self.resources):
+            return False
+        self.resources -= node.resource_cost
+        return True
+
+    def available_research(self) -> List[ResearchNode]:
+        """Expose nodes currently available for UI / debugging."""
+
+        return self.research_manager.available_nodes(available_resources=self.resources)
+
+    def _node(self, node_id: str) -> Optional[ResearchNode]:
+        for node in self.research_manager.nodes():
+            if node.id == node_id:
+                return node
+        return None
 
     def _spawn_ship_from_base(self, base: Base, ship_definition: ShipDefinition) -> None:
         """Instantiate a finished hull near ``base`` and add it to the fleet."""
@@ -83,6 +112,21 @@ class World:
 def create_initial_world() -> World:
     """Create a simple sandbox world with one planetoid and one Astral Citadel."""
     world = World(width=4000.0, height=4000.0)
+
+    # For the sandbox, assume Shipwright Foundry + Fleet Forge exist/are online.
+    world.research_manager.set_facility_online("ShipwrightFoundry", True)
+    world.research_manager.set_facility_online("FleetForge", True)
+    # TODO: Hook facility online states to actual facility entities once they exist.
+
+    # Pre-complete early nodes so the sandbox can showcase multiple hull classes.
+    for node_id in [
+        "SF_STRIKE_FUNDAMENTALS_I",
+        "SF_ESCORT_DESIGN_I",
+        "SF_ADVANCED_STRIKE_DOCTRINE",
+        "SF_ESCORT_HEAVY_FRAMES",
+        "FF_HEAVY_HULL_FABRICATION",
+    ]:
+        world.research_manager.force_complete(node_id)
 
     planetoid = Planetoid(position=(0.0, 0.0), radius=90.0, resource_yield=120)
     world.planetoids.append(planetoid)
