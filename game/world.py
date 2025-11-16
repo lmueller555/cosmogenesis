@@ -5,6 +5,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
+from .ai import EnemyAIController
 from .entities import Asteroid, Base, Facility, Planetoid, Ship
 from .ship_registry import (
     ShipDefinition,
@@ -51,11 +52,13 @@ class World:
     research_manager: ResearchManager = field(default_factory=ResearchManager)
     visibility: VisibilityGrid = field(init=False, repr=False)
     player_faction: str = "player"
+    enemy_ai: EnemyAIController | None = field(default=None, init=False, repr=False)
 
     # TODO: Extend fog-of-war to account for enemy sensors and neutral factions.
 
     def __post_init__(self) -> None:
         self.visibility = VisibilityGrid(world_width=self.width, world_height=self.height)
+        self.enemy_ai = EnemyAIController(self)
 
     def update(self, dt: float) -> None:
         """Advance simulation forward by ``dt`` seconds."""
@@ -64,6 +67,9 @@ class World:
         self.resource_income_rate = income_per_second
         if income_per_second > 0.0 and dt > 0.0:
             self.resources += income_per_second * dt
+
+        if self.enemy_ai is not None:
+            self.enemy_ai.update(dt)
 
         for ship in self.ships:
             ship.update(dt)
