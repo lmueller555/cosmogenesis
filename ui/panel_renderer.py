@@ -12,6 +12,7 @@ from game.camera import Camera3D
 from game.entities import Base, Ship
 from game.research import ResearchAvailability, ResearchNode
 from game.world import World
+from game.visibility import VisibilityGrid
 from game.ship_registry import ShipDefinition
 from .layout import UILayout
 
@@ -73,12 +74,15 @@ class UIPanelRenderer:
         gl.glMatrixMode(gl.GL_MODELVIEW)
         gl.glLoadIdentity()
         gl.glDisable(gl.GL_DEPTH_TEST)
+        gl.glEnable(gl.GL_BLEND)
+        gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
 
         self._draw_panel_background(layout)
         self._draw_selection_summary(world.selected_ships, layout.selection_rect)
         self._draw_context_panel(world, layout.context_rect)
         self._draw_minimap(world, camera, layout.minimap_rect)
 
+        gl.glDisable(gl.GL_BLEND)
         gl.glEnable(gl.GL_DEPTH_TEST)
 
     def handle_mouse_click(self, world: World, layout: UILayout, pos: Vec2) -> bool:
@@ -379,19 +383,21 @@ class UIPanelRenderer:
     # ------------------------------------------------------------------
     def _draw_minimap(self, world: World, camera: Camera3D, rect: pygame.Rect) -> None:
         self._draw_rect(rect, self._minimap_bg)
-        self._draw_rect_outline(rect, (0.4, 0.45, 0.6, 1.0))
 
         bounds = self._world_bounds(world)
-
-        self._draw_fog_overlay(world, rect, bounds)
+        visibility: Optional[VisibilityGrid] = getattr(world, "visibility", None)
 
         for planetoid in world.planetoids:
+            if not self._is_position_explored(visibility, planetoid.position):
+                continue
             center = self._world_to_minimap(planetoid.position, rect, bounds)
             radius = self._planetoid_radius(planetoid.radius, rect, bounds)
             color = self._planetoid_color(planetoid.controller)
             self._draw_minimap_planetoid(center, radius, color)
 
         for asteroid in world.asteroids:
+            if not self._is_position_explored(visibility, asteroid.position):
+                continue
             center = self._world_to_minimap(asteroid.position, rect, bounds)
             radius = self._asteroid_radius(asteroid.radius, rect, bounds)
             color = self._asteroid_color(asteroid.controller)
@@ -416,8 +422,18 @@ class UIPanelRenderer:
             point = self._world_to_minimap(base.position, rect, bounds)
             self._draw_minimap_dot(point, self._friendly_color, size=5.0)
 
+        self._draw_fog_overlay(world, rect, bounds)
         self._draw_camera_outline(camera, rect, bounds)
+        self._draw_rect_outline(rect, (0.4, 0.45, 0.6, 1.0))
         self._draw_minimap_outline(rect)
+
+    @staticmethod
+    def _is_position_explored(
+        visibility: Optional[VisibilityGrid], position: Vec2
+    ) -> bool:
+        if visibility is None:
+            return True
+        return visibility.is_explored(position)
 
     def _draw_camera_outline(
         self, camera: Camera3D, minimap_rect: pygame.Rect, bounds: Tuple[float, float, float, float]
