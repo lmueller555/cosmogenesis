@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Iterable, List, Optional, Tuple
+from typing import Callable, Iterable, List, Optional, Sequence, Tuple
 
 import math
 import pygame
@@ -16,6 +16,13 @@ from game.visibility import VisibilityGrid
 from game.ship_registry import ShipDefinition
 from game.facility_registry import FacilityDefinition, all_facility_definitions
 from game.production import ProductionJob
+from rendering.wireframe_primitives import (
+    WireframeMesh,
+    create_defense_grid_node_mesh,
+    create_fleet_forge_mesh,
+    create_research_nexus_mesh,
+    create_shipwright_foundry_mesh,
+)
 from .layout import UILayout
 
 
@@ -42,6 +49,13 @@ class FacilityButton:
     rect: pygame.Rect
     enabled: bool = True
     context: str = "base"
+
+
+@dataclass(frozen=True)
+class FacilityIconMesh:
+    vertices: List[Vec2]
+    segments: Sequence[Tuple[int, int]]
+    bounds: Tuple[float, float, float, float]
 
 
 class UIPanelRenderer:
@@ -78,6 +92,7 @@ class UIPanelRenderer:
             "enemy": (1.0, 0.4, 0.4, 0.75),
             "neutral": (0.6, 0.6, 0.6, 0.7),
         }
+        self._facility_icon_meshes = self._build_facility_icon_meshes()
         self._research_buttons: List[ResearchButton] = []
         self._production_buttons: List[ProductionButton] = []
         self._facility_buttons: List[FacilityButton] = []
@@ -229,6 +244,78 @@ class UIPanelRenderer:
             draw_callable()
         finally:
             gl.glDisable(gl.GL_SCISSOR_TEST)
+
+    def _build_facility_icon_meshes(self) -> dict[str, FacilityIconMesh]:
+        builders = {
+            "ShipwrightFoundry": create_shipwright_foundry_mesh,
+            "FleetForge": create_fleet_forge_mesh,
+            "ResearchNexus": create_research_nexus_mesh,
+            "DefenseGridNode": create_defense_grid_node_mesh,
+        }
+        meshes: dict[str, FacilityIconMesh] = {}
+        for facility_type, builder in builders.items():
+            try:
+                meshes[facility_type] = self._project_facility_mesh(builder())
+            except Exception:
+                continue
+        return meshes
+
+    def _project_facility_mesh(self, mesh: WireframeMesh) -> FacilityIconMesh:
+        projected: List[Vec2] = []
+        min_x = math.inf
+        max_x = -math.inf
+        min_y = math.inf
+        max_y = -math.inf
+        tilt = 0.32
+        for x, y, z in mesh.vertices:
+            px = x + y * tilt
+            py = -z + y * tilt
+            projected.append((px, py))
+            min_x = min(min_x, px)
+            max_x = max(max_x, px)
+            min_y = min(min_y, py)
+            max_y = max(max_y, py)
+        if not projected:
+            projected.append((0.0, 0.0))
+            min_x = max_x = min_y = max_y = 0.0
+        bounds = (min_x, max_x, min_y, max_y)
+        return FacilityIconMesh(projected, list(mesh.segments), bounds)
+
+    def _draw_facility_icon_mesh(
+        self,
+        rect: pygame.Rect,
+        facility_type: str,
+        *,
+        color: Tuple[float, float, float, float],
+    ) -> None:
+        icon_mesh = self._facility_icon_meshes.get(facility_type)
+        if icon_mesh is None or rect.width <= 0 or rect.height <= 0:
+            return
+        min_x, max_x, min_y, max_y = icon_mesh.bounds
+        span_x = max(1e-3, max_x - min_x)
+        span_y = max(1e-3, max_y - min_y)
+        padding = 8
+        available_w = max(1.0, rect.width - padding * 2)
+        available_h = max(1.0, rect.height - padding * 2)
+        scale = min(available_w / span_x, available_h / span_y)
+        center_x = (min_x + max_x) * 0.5
+        center_y = (min_y + max_y) * 0.5
+        transformed: List[Vec2] = []
+        for px, py in icon_mesh.vertices:
+            tx = rect.centerx + (px - center_x) * scale
+            ty = rect.centery + (py - center_y) * scale
+            transformed.append((tx, ty))
+
+        gl.glColor4f(*color)
+        gl.glLineWidth(1.4)
+        gl.glBegin(gl.GL_LINES)
+        for a, b in icon_mesh.segments:
+            ax, ay = transformed[a]
+            bx, by = transformed[b]
+            gl.glVertex2f(ax, ay)
+            gl.glVertex2f(bx, by)
+        gl.glEnd()
+        gl.glLineWidth(1.0)
 
     def _context_clip_rect(self, layout: UILayout) -> Optional[pygame.Rect]:
         context = layout.context_rect
@@ -634,58 +721,21 @@ class UIPanelRenderer:
         cursor_y += 22
 
         pending = getattr(world, "pending_construction", None)
-        if pending is not None and pending.worker is worker:
-            self._draw_text(
-                cursor_x,
-                cursor_y,
-                f"Placing: {pending.definition.name}",
-                self._text_color,
-            )
-            cursor_y += 20
-            self._draw_text(
-                cursor_x,
-                cursor_y,
-                "Left-click in the sector to set the build site.",
-                self._muted_text,
-            )
-            cursor_y += 24
+        worker_pending = pending is not None and pending.worker is worker
+        cursor_y = self._draw_worker_job_status(world, worker, cursor_x, cursor_y)
+        cursor_y += 12
 
+        if worker_pending and pending is not None:
+            self._draw_worker_pending_panel(rect, cursor_x, cursor_y, pending)
+            return
+
+        self._draw_worker_facility_palette(world, rect, cursor_x, cursor_y, worker)
+
+    def _draw_worker_job_status(
+        self, world: World, worker: Ship, cursor_x: float, cursor_y: float
+    ) -> float:
         jobs = [job for job in world.facility_jobs if job.worker is worker]
-        if jobs:
-            for job in jobs:
-                if job.state == "travel":
-                    self._draw_text(
-                        cursor_x,
-                        cursor_y,
-                        f"En route: {job.definition.name}",
-                        self._text_color,
-                    )
-                    cursor_y += 20
-                    self._draw_text(
-                        cursor_x,
-                        cursor_y,
-                        "Worker traveling to construction site.",
-                        self._muted_text,
-                    )
-                    cursor_y += 24
-                    continue
-                total_time = max(0.1, job.definition.build_time)
-                progress = 1.0 - max(0.0, job.remaining_time) / total_time
-                self._draw_text(
-                    cursor_x,
-                    cursor_y,
-                    f"Constructing: {job.definition.name} ({progress * 100:4.0f}% complete)",
-                    self._text_color,
-                )
-                cursor_y += 20
-                self._draw_text(
-                    cursor_x,
-                    cursor_y,
-                    f"{max(0.0, job.remaining_time):0.1f}s remaining",
-                    self._muted_text,
-                )
-                cursor_y += 24
-        else:
+        if not jobs:
             self._draw_text(
                 cursor_x,
                 cursor_y,
@@ -693,25 +743,145 @@ class UIPanelRenderer:
                 self._muted_text,
             )
             cursor_y += 22
+            return cursor_y
 
-        cursor_y += 8
-        self._draw_text(cursor_x, cursor_y, "Available Facilities", self._context_text)
+        for job in jobs:
+            if job.state == "travel":
+                self._draw_text(
+                    cursor_x,
+                    cursor_y,
+                    f"En route: {job.definition.name}",
+                    self._text_color,
+                )
+                cursor_y += 20
+                self._draw_text(
+                    cursor_x,
+                    cursor_y,
+                    "Worker traveling to construction site.",
+                    self._muted_text,
+                )
+                cursor_y += 24
+                continue
+            total_time = max(0.1, job.definition.build_time)
+            progress = 1.0 - max(0.0, job.remaining_time) / total_time
+            self._draw_text(
+                cursor_x,
+                cursor_y,
+                f"Constructing: {job.definition.name} ({progress * 100:4.0f}% complete)",
+                self._text_color,
+            )
+            cursor_y += 20
+            self._draw_text(
+                cursor_x,
+                cursor_y,
+                f"{max(0.0, job.remaining_time):0.1f}s remaining",
+                self._muted_text,
+            )
+            cursor_y += 24
+        return cursor_y
+
+    def _draw_worker_pending_panel(
+        self,
+        rect: pygame.Rect,
+        cursor_x: float,
+        cursor_y: float,
+        pending: "PendingFacilityPlacement",
+    ) -> None:
+        definition = pending.definition
+        self._draw_text(cursor_x, cursor_y, f"Placing: {definition.name}", self._context_text)
         cursor_y += 24
 
-        definitions = sorted(all_facility_definitions(), key=lambda definition: definition.name)
-        pending_type = (
-            pending.definition.facility_type
-            if pending is not None and pending.worker is worker
-            else None
+        preview_height = max(140, min(220, rect.height - int(cursor_y - rect.top) - 120))
+        preview_rect = pygame.Rect(
+            rect.left + 12,
+            int(cursor_y),
+            rect.width - 24,
+            preview_height,
         )
-        for definition in definitions:
-            height = 88
-            button_rect = pygame.Rect(rect.left + 8, int(cursor_y), rect.width - 16, height)
+        self._draw_rect(preview_rect, (0.06, 0.08, 0.12, 0.92))
+        self._draw_rect_outline(preview_rect, (0.24, 0.3, 0.42, 1.0))
+        icon_rect = preview_rect.inflate(-24, -24)
+        icon_rect.height = max(64, icon_rect.height)
+        self._draw_facility_icon_mesh(icon_rect, definition.facility_type, color=(0.9, 0.95, 1.0, 1.0))
+        cursor_y = preview_rect.bottom + 16
+
+        detail_lines = [
+            f"Cost: {definition.resource_cost:,}",
+            f"Build Time: {definition.build_time:.0f}s",
+            f"Durability: {definition.health} HP / {definition.shields} SH",
+        ]
+        for line in detail_lines:
+            self._draw_text(cursor_x, cursor_y, line, self._text_color)
+            cursor_y += 20
+
+        desc_width = rect.width - 24
+        for wrapped in self._wrap_text(definition.description, desc_width):
+            self._draw_text(cursor_x, cursor_y, wrapped, self._muted_text)
+            cursor_y += 20
+
+        cursor_y += 8
+        self._draw_text(
+            cursor_x,
+            cursor_y,
+            "Left-click in the world to place the facility.",
+            self._context_text,
+        )
+        cursor_y += 20
+        self._draw_text(
+            cursor_x,
+            cursor_y,
+            "Press ESC to cancel and return to the build list.",
+            self._muted_text,
+        )
+
+    def _draw_worker_facility_palette(
+        self,
+        world: World,
+        rect: pygame.Rect,
+        cursor_x: float,
+        cursor_y: float,
+        worker: Ship,
+    ) -> None:
+        self._draw_text(cursor_x, cursor_y, "Available Facilities", self._context_text)
+        cursor_y += 26
+        self._draw_text(
+            cursor_x,
+            cursor_y,
+            "Click a structure to preview and begin placement.",
+            self._muted_text,
+        )
+        cursor_y += 28
+
+        definitions = sorted(all_facility_definitions(), key=lambda definition: definition.name)
+        palette_area_top = cursor_y
+        palette_bottom = rect.bottom - 8
+        palette_rect = pygame.Rect(
+            rect.left + 8,
+            int(palette_area_top),
+            rect.width - 16,
+            max(0, int(palette_bottom - palette_area_top)),
+        )
+        if palette_rect.height <= 0 or palette_rect.width <= 0:
+            return
+
+        button_width = 156
+        button_height = 168
+        spacing = 16
+        columns = max(1, palette_rect.width // (button_width + spacing))
+        columns = min(columns, len(definitions)) or 1
+        rows = max(1, math.ceil(len(definitions) / columns)) if definitions else 1
+        total_width = columns * button_width + (columns - 1) * spacing
+        start_x = palette_rect.left + max(0, (palette_rect.width - total_width) // 2)
+        start_y = palette_rect.top
+
+        for index, definition in enumerate(definitions):
+            row = index // columns
+            col = index % columns
+            x = start_x + col * (button_width + spacing)
+            y = start_y + row * (button_height + spacing)
+            button_rect = pygame.Rect(int(x), int(y), button_width, button_height)
             enabled, status_line = world.worker_construction_status(worker, definition)
-            if pending_type == definition.facility_type:
-                enabled = False
-                status_line = "Awaiting placement"
-            self._draw_facility_button(button_rect, definition, enabled, status_line)
+            self._draw_worker_facility_button(button_rect, definition, enabled, status_line)
             self._facility_buttons.append(
                 FacilityButton(
                     facility_type=definition.facility_type,
@@ -720,7 +890,66 @@ class UIPanelRenderer:
                     context="worker",
                 )
             )
-            cursor_y += height + 8
+
+    def _draw_worker_facility_button(
+        self,
+        rect: pygame.Rect,
+        definition: FacilityDefinition,
+        enabled: bool,
+        status_line: Optional[str],
+    ) -> None:
+        if enabled:
+            bg = (0.12, 0.16, 0.24, 0.95)
+            border = (0.3, 0.38, 0.52, 1.0)
+            title = self._text_color
+            detail = self._context_text
+            mesh_color = (0.9, 0.96, 1.0, 1.0)
+        else:
+            bg = (0.07, 0.08, 0.12, 0.8)
+            border = (0.2, 0.24, 0.32, 1.0)
+            title = self._muted_text
+            detail = self._muted_text
+            mesh_color = (0.4, 0.45, 0.55, 1.0)
+        self._draw_rect(rect, bg)
+        self._draw_rect_outline(rect, border)
+
+        icon_size = rect.width - 28
+        icon_rect = pygame.Rect(
+            rect.left + 14,
+            rect.top + 14,
+            max(32, icon_size),
+            max(32, icon_size),
+        )
+        icon_rect.height = min(icon_rect.height, rect.height - 64)
+        self._draw_facility_icon_mesh(icon_rect, definition.facility_type, color=mesh_color)
+
+        label_y = icon_rect.bottom + 10
+        self._draw_text_centered(rect.centerx, label_y, definition.name, title)
+        label_y += 18
+        info_line = f"{definition.resource_cost:,} | {definition.build_time:.0f}s"
+        info_color = detail
+        if status_line and not enabled:
+            info_line = status_line
+            info_color = self._muted_text
+        self._draw_text_centered(rect.centerx, label_y, info_line, info_color)
+
+    def _wrap_text(self, text: str, max_width: float) -> List[str]:
+        if max_width <= 0:
+            return [text]
+        words = text.split()
+        if not words:
+            return [""]
+        lines: List[str] = []
+        current = words[0]
+        for word in words[1:]:
+            candidate = f"{current} {word}" if current else word
+            if self._font.size(candidate)[0] <= max_width:
+                current = candidate
+            else:
+                lines.append(current)
+                current = word
+        lines.append(current)
+        return lines
 
     def _draw_ship_context(self, world: World, cursor_x: float, cursor_y: float) -> None:
         self._draw_text(cursor_x, cursor_y, "Ship Abilities", self._context_text)
