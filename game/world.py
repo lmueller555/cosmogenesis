@@ -169,6 +169,17 @@ class World:
         self.resources -= definition.resource_cost
         return True
 
+    def cancel_last_ship_order(self, base: Base) -> bool:
+        """Remove the most recent ship order from ``base`` and refund its cost."""
+
+        if base not in self.bases:
+            return False
+        definition = base.production.cancel_last_job()
+        if definition is None:
+            return False
+        self.resources += definition.resource_cost
+        return True
+
     def planetoids_controlled_by(self, faction: str) -> List[Planetoid]:
         """Return a list of planetoids currently owned by ``faction``."""
 
@@ -323,6 +334,8 @@ class World:
         if ship.is_worker:
             self._configure_worker(ship, base)
         self.ships.append(ship)
+        if base.waypoint is not None and not ship.is_worker:
+            ship.set_move_target(base.waypoint)
 
     def _resolve_ship_collisions(self, dt: float) -> None:
         """Gently push overlapping idle ships apart so they don't fully stack."""

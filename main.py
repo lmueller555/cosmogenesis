@@ -104,6 +104,10 @@ def run() -> None:
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                base = world.selected_base
+                if base is not None and base.faction == world.player_faction:
+                    if world.cancel_last_ship_order(base):
+                        continue
                 running = False
             elif event.type == pygame.VIDEORESIZE:
                 pygame.display.set_mode(event.size, pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE)
@@ -127,12 +131,21 @@ def run() -> None:
                     if layout.is_in_gameplay(event.pos):
                         clamped = layout.clamp_to_gameplay(event.pos)
                         world_pos = camera.screen_to_world(clamped)
+                        if world_pos is None:
+                            continue
+                        clamped_world = _clamp_to_world(world, world_pos)
+                        base = world.selected_base
+                        if base is not None and base.faction == world.player_faction:
+                            base.waypoint = clamped_world
+                            continue
                         behavior = "attack" if pygame.key.get_pressed()[pygame.K_a] else "move"
-                        world.issue_move_order(
-                            _clamp_to_world(world, world_pos), behavior=behavior
-                        )
+                        world.issue_move_order(clamped_world, behavior=behavior)
                     elif layout.is_in_minimap(event.pos):
                         world_target = _minimap_to_world(world, layout, event.pos)
+                        base = world.selected_base
+                        if base is not None and base.faction == world.player_faction:
+                            base.waypoint = world_target
+                            continue
                         behavior = "attack" if pygame.key.get_pressed()[pygame.K_a] else "move"
                         world.issue_move_order(world_target, behavior=behavior)
             elif event.type == pygame.MOUSEWHEEL:
