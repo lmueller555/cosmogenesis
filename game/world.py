@@ -740,13 +740,6 @@ def create_initial_world() -> World:
         world._apply_ship_research(ship)
         world.ships.append(ship)
 
-    # Spawn a few enemy ships to exercise combat logic.
-    enemy_positions = [(-200.0, -120.0), (-360.0, -80.0), (-420.0, 160.0)]
-    for idx, pos in enumerate(enemy_positions):
-        definition_name = ["Spearling", "Daggerwing", "Sunlance"][idx]
-        enemy_ship = Ship(position=pos, definition=get_ship_definition(definition_name), faction="enemy")
-        world.ships.append(enemy_ship)
-
     world.refresh_visibility()
 
     return world
