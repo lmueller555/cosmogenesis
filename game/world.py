@@ -5,7 +5,7 @@ import math
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
-from .entities import Base, Planetoid, Ship
+from .entities import Base, Facility, Planetoid, Ship
 from .ship_registry import (
     ShipDefinition,
     all_ship_definitions,
@@ -23,6 +23,7 @@ class World:
     planetoids: List[Planetoid] = field(default_factory=list)
     bases: List[Base] = field(default_factory=list)
     ships: List[Ship] = field(default_factory=list)
+    facilities: List[Facility] = field(default_factory=list)
     selected_ships: List[Ship] = field(default_factory=list)
     resources: float = 20_000.0
     resource_income_rate: float = 0.0  # Updated each tick for UI feedback
@@ -79,6 +80,27 @@ class World:
         base.queue_ship(ship_name)
         self.resources -= definition.resource_cost
         return True
+
+    # ------------------------------------------------------------------
+    # Facility management (ties into research gating per `research_guidance`).
+    # ------------------------------------------------------------------
+    def add_facility(self, facility: Facility) -> None:
+        """Register ``facility`` and sync the research manager's online state."""
+
+        if facility not in self.facilities:
+            self.facilities.append(facility)
+        self._sync_facility_type(facility.facility_type)
+
+    def remove_facility(self, facility: Facility) -> None:
+        if facility in self.facilities:
+            self.facilities.remove(facility)
+            self._sync_facility_type(facility.facility_type)
+
+    def set_facility_online(self, facility: Facility, online: bool) -> None:
+        if facility not in self.facilities:
+            self.facilities.append(facility)
+        facility.online = online
+        self._sync_facility_type(facility.facility_type)
 
     def player_primary_base(self) -> Optional[Base]:
         """Return the first operational player-controlled base, if any."""
@@ -182,6 +204,14 @@ class World:
         for base in self.bases:
             self._apply_base_research(base)
 
+    def _sync_facility_type(self, facility_type: str) -> None:
+        """Push current online/offline state for ``facility_type`` to research."""
+
+        online = any(
+            facility.online for facility in self.facilities if facility.facility_type == facility_type
+        )
+        self.research_manager.set_facility_online(facility_type, online)
+
     def _resource_income_per_second(self) -> float:
         """Compute the passive resource income for the current tick."""
 
@@ -208,11 +238,6 @@ def create_initial_world() -> World:
     """Create a simple sandbox world with one planetoid and one Astral Citadel."""
     world = World(width=4000.0, height=4000.0)
 
-    # For the sandbox, assume Shipwright Foundry + Fleet Forge exist/are online.
-    world.research_manager.set_facility_online("ShipwrightFoundry", True)
-    world.research_manager.set_facility_online("FleetForge", True)
-    # TODO: Hook facility online states to actual facility entities once they exist.
-
     # Pre-complete early nodes so the sandbox can showcase multiple hull classes.
     for node_id in [
         "SF_STRIKE_FUNDAMENTALS_I",
@@ -229,6 +254,22 @@ def create_initial_world() -> World:
     base = Base(position=(160.0, 0.0))
     world.bases.append(base)
     world._apply_base_research(base)
+
+    # Stub in Shipwright Foundry + Fleet Forge attached to the Astral Citadel.
+    shipwright = Facility(
+        position=base.position,
+        facility_type="ShipwrightFoundry",
+        name="Shipwright Foundry",
+        host_base=base,
+    )
+    fleet_forge = Facility(
+        position=base.position,
+        facility_type="FleetForge",
+        name="Fleet Forge",
+        host_base=base,
+    )
+    world.add_facility(shipwright)
+    world.add_facility(fleet_forge)
 
     # Seed a handful of strike/escort ships for visualization tests.
     spearling = Ship(position=(400.0, 120.0), definition=get_ship_definition("Spearling"))
