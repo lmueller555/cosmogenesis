@@ -715,10 +715,14 @@ class UIPanelRenderer:
             else:
                 continue
             min_x, max_x, min_y, max_y = grid.cell_bounds(row, col)
-            left = rect.left + ((min_x - bounds[0]) / world_width) * rect.width
-            right = rect.left + ((max_x - bounds[0]) / world_width) * rect.width
-            bottom = rect.bottom - ((min_y - bounds[2]) / world_height) * rect.height
-            top = rect.bottom - ((max_y - bounds[2]) / world_height) * rect.height
+            left = self._world_to_minimap((min_x, min_y), rect, bounds)[0]
+            right = self._world_to_minimap((max_x, min_y), rect, bounds)[0]
+            if left > right:
+                left, right = right, left
+            bottom = self._world_to_minimap((min_x, min_y), rect, bounds)[1]
+            top = self._world_to_minimap((min_x, max_y), rect, bounds)[1]
+            if top > bottom:
+                top, bottom = bottom, top
             self._draw_minimap_quad(left, right, top, bottom, color)
 
     def _draw_minimap_quad(
@@ -750,7 +754,7 @@ class UIPanelRenderer:
             return (rect.centerx, rect.centery)
         normalized_x = (position[0] - min_x) / width
         normalized_y = (position[1] - min_y) / height
-        x = rect.left + normalized_x * rect.width
+        x = rect.left + (1.0 - normalized_x) * rect.width
         y = rect.bottom - normalized_y * rect.height
         return (x, y)
 
