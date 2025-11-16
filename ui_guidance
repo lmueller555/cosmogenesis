@@ -1,0 +1,369 @@
+COSMOGENESIS – `ui_guidance`
+(Authoritative UI Design – **Do Not Modify**)
+
+---
+
+## A. Meta-Rules for the LLM Coder
+
+1. **This `ui_guidance` document is authoritative.**
+
+   * You **must not** edit, override, reinterpret, or “improve” this document.
+   * You **must not** generate alternate or supplemental UI guidance documents (e.g., `ui_guidance_v2`, `ui_notes`, `hud_ideas`, etc.).
+   * If something seems missing or ambiguous, implement the simplest behavior consistent with this document and leave a `TODO` comment for the human designer.
+
+2. **Relationship to Other Guidance**
+
+   * Overall game design, camera, and systems are defined in **`game_guidance`**.
+   * Ship and base stats, roles, and geometry are defined in **`ship_guidance`**.
+   * Tech trees and research behavior are defined in **`research_guidance`**.
+   * This `ui_guidance` document **extends** those documents specifically for UI layout, behavior, and interaction.
+   * If there is a perceived conflict:
+
+     * Do **not** “fix” the documents.
+     * Apply the simplest consistent interpretation and mark a `TODO` for the human designer.
+
+3. **No New UI Systems Without Approval**
+
+   * You may refactor UI code for clarity and maintainability.
+   * You may not introduce fundamentally new UI paradigms (e.g., fully different layouts, entire new screens) that contradict this layout without explicit instruction.
+
+---
+
+## B. High-Level UI Layout
+
+The screen is divided into two main regions:
+
+1. **Gameplay Viewport (Top 80%)**
+
+   * Occupies the **top 80%** of the full window height.
+   * This region is where the **3D wireframe world** (ships, bases, planetoids, asteroids, facilities, projectiles) is rendered using the 3D camera described in `game_guidance`.
+   * The camera’s projection and view transforms **only apply** to this region.
+   * Fog of war, selection rectangles, in-world indicators, and world-space elements are all rendered here.
+
+2. **UI Panel (Bottom 20%)**
+
+   * Occupies the **bottom 20%** of the full window height.
+   * Implemented as a **separate 2D UI surface** or 2D rendering pass.
+   * Contains:
+
+     * Bottom-right: **Mini-map** (interactive, clickable).
+     * Bottom-center: **Selected Unit / Selection Summary Panel**.
+     * Bottom-right-most **25% of the UI width**: **Context/Action Panel** showing build/research/upgrade/ability options of the selected object.
+
+> **Important:**
+> The camera system must treat only the gameplay viewport (top 80%) as its rendering target. The bottom 20% is purely UI and is **not** part of the 3D world.
+
+---
+
+## C. Coordinate Systems and Surfaces
+
+1. **Gameplay Viewport Coordinates**
+
+   * Full window: width = `W`, height = `H`.
+   * Gameplay viewport:
+
+     * `x ∈ [0, W]`
+     * `y ∈ [0, 0.8 * H]` (or equivalent internal representation)
+   * All 3D rendering and mouse-to-world picking logic must use this region’s dimensions.
+
+2. **UI Panel Coordinates**
+
+   * UI panel:
+
+     * `x ∈ [0, W]`
+     * `y ∈ [0.8 * H, H]`
+   * You can treat the UI panel as:
+
+     * A separate `pygame.Surface` or
+     * A sub-viewport / scissor region with 2D drawing calls.
+   * UI layout calculations must be based on this panel area only, not the entire screen.
+
+3. **Hit Testing**
+
+   * Mouse input must be tested against:
+
+     * Gameplay viewport region for world interactions (selection/waypoints).
+     * UI panel region for UI interactions (mini-map, buttons, etc.).
+   * Logic must explicitly branch based on which region the click occurs in.
+
+---
+
+## D. Mini-Map (Bottom-Right of UI Panel)
+
+### D.1 Mini-Map Placement & Size
+
+* The **mini-map** is located in the **bottom-right area** of the UI panel.
+* It must be large enough to be usable but must fit entirely within the bottom 20% of the screen.
+* Exact pixel size can be defined in code (e.g., a fixed size or a fraction of UI width), but **it must not overlap** the center or context panels.
+
+### D.2 Map Representation
+
+* The mini-map is a **2D top-down projection** of the full sector:
+
+  * Map coordinates represent the sector’s world-space x–y plane.
+  * The entire map rectangle corresponds to the entire sector bounds.
+* The mini-map must respect **fog of war**:
+
+  * Only show terrain and points that exist in **explored** regions (i.e., within visual range of any friendly unit at some time in the past).
+  * Unexplored areas remain dark/hidden. Previously explored but currently not visible areas may show remembered terrain but no current enemy units, consistent with the game’s fog logic.
+
+### D.3 Entity Dots and Colors
+
+* **White dots**:
+
+  * Represent **your ships and facilities**.
+  * Position corresponds to their world location projected into mini-map space.
+* **Blue dots**:
+
+  * When a ship or facility is **selected**, its mini-map dot becomes **blue**.
+  * If multiple units are selected, all selected units should be shown in blue (for clarity), even though only one is displayed in the center panel.
+* **Red dots**:
+
+  * Represent **enemy units** that are currently **within radar range** of any of your ships or bases.
+  * Only show red dots for enemies:
+
+    * Inside your radar range, and
+    * Inside **non-fogged** or “radar-known” portions of the map (respecting how radar and fog interact per `game_guidance`).
+  * If enemy units are outside your radar range, they should not appear as red dots.
+
+> Implementation note: You will need a mapping from world coordinates to mini-map coordinates, plus visibility/radar checks.
+
+### D.4 Camera Viewport Outline
+
+* The mini-map must display a **white rectangular outline** representing the current camera’s view in world space.
+
+  * The rectangle should be scaled such that:
+
+    * Its size matches the portion of the map the camera is currently looking at (in relative terms).
+    * Moving the camera changes the rectangle’s position.
+    * Zooming the camera changes the rectangle’s size (zoomed in → smaller rectangle, zoomed out → larger).
+* This rectangle gives the player spatial awareness of where their current view lies within the sector.
+
+### D.5 Mini-Map Interactions
+
+The mini-map is **clickable and interactive**.
+
+1. **Left Click – Camera Move**
+
+   * When the player **left-clicks** on a point on the mini-map:
+
+     * Translate that mini-map position back to a world-space location on the sector plane.
+     * Move the camera so that its center or focus aligns with that world-space location.
+   * This must respect world bounds (no camera outside the sector).
+
+2. **Right Click – Send Selected Units**
+
+   * When the player **right-clicks** on the mini-map:
+
+     * Translate that mini-map position to world-space coordinates.
+     * Issue a movement/waypoint command to all currently **selected units** to move to that location.
+   * This should behave similarly to right-clicking in the gameplay viewport, but using the mini-map as the target origin.
+
+3. **Hit Testing & Regions**
+
+   * Clicks must be correctly discriminated:
+
+     * UI panel vs gameplay viewport
+     * Within UI panel: mini-map region vs central panel vs context panel
+   * Only mini-map region receives mini-map behavior.
+
+---
+
+## E. Selection Summary Panel (Bottom-Center of UI Panel)
+
+### E.1 Purpose & Placement
+
+* Located in the **center portion** of the bottom UI panel (between the left UI area and the mini-map on the right).
+* Shows information about the **currently selected object(s)**.
+
+### E.2 Single vs Multiple Selection
+
+* **Single selection:**
+
+  * If exactly one unit or structure is selected, show detailed information for that object.
+* **Multiple selection:**
+
+  * If multiple units are currently selected:
+
+    * Choose **one representative unit** to display in detail (e.g., the first in the selection list).
+    * Optionally show a brief summary of the total number/types, but that’s a secondary detail.
+  * The requirement is: **“If multiple units are currently selected, just display one of the units.”**
+
+### E.3 Information Displayed
+
+For the displayed unit/facility, show:
+
+* **Name** (e.g., ship class name or facility name).
+* **Class / Type** (Strike/Escort/Line/Capital/Base/Facility).
+* **Core stats** at minimum:
+
+  * Health (HP / Max HP)
+  * Armor
+  * Shields (current / max)
+  * Energy (current / max, and optionally regen rate)
+  * Weapon damage (base value and any relevant upgrade modifiers)
+  * Flight speed
+  * Visual range
+  * Radar range
+  * Firing range
+* **Optional**: any status indicators (e.g., “under construction”, “researching”, “disabled”) if that information is available and relevant.
+
+> Exact layout (bars vs text vs icons) can be decided in code, but content should cover these core stats.
+
+---
+
+## F. Context/Action Panel (Right 25% of UI Panel)
+
+### F.1 Placement & Size
+
+* The **right-most 25%** of the **UI panel width** is the **Context/Action Panel**.
+* This panel is separate from the mini-map area but both exist in the right region of the bottom UI; layout must be planned so they do not overlap.
+
+  * A common approach:
+
+    * Upper part of the right 25%: Context/Action Panel.
+    * Lower-right corner: mini-map.
+  * The exact subdivision is implementation-specific but must preserve:
+
+    * Mini-map bottom-right.
+    * Context/Action Panel accessible and readable.
+
+### F.2 Contextual Behavior
+
+The Context/Action Panel shows **different content depending on what is selected**:
+
+1. **If a Facility is Selected**
+
+   * Display options that facility provides, such as:
+
+     * **Ships that can be built** (queued into production for a base/shipyard).
+     * **Research options** (tech nodes from `research_guidance` that are available, in progress, or completed).
+     * **Upgrade options** tied to that facility.
+     * Any **abilities** the facility may have (e.g., activate a shield pulse, deploy drones, etc. – only if defined in other guidance or code).
+   * Each option should be represented as a clickable UI element (button, icon, row) that:
+
+     * Checks resource availability before activating.
+     * Triggers appropriate actions (start build, queue research, apply upgrade, activate ability).
+
+2. **If a Ship is Selected**
+
+   * Display that ship’s **special abilities** (if any are defined), such as:
+
+     * Active abilities (e.g., temporary speed boost, sensor ping, special attack).
+     * Ship-specific upgrades or mode toggles.
+   * Ship-building or research options are **not** shown here unless that ship is also a platform that provides them (rare; typically only bases/facilities).
+
+3. **If the Base is Selected**
+
+   * Show:
+
+     * Ship production options available at the base.
+     * Base upgrades (defenses, module slots, etc.).
+     * Facility/module construction options (e.g., building a Shipwright Foundry, Fleet Forge, Research Nexus, Defense Grid Node, etc.).
+
+4. **If Multiple Units Are Selected**
+
+   * Show **group-appropriate actions** if defined (e.g., formation controls, stance toggles).
+   * If no group-specific actions exist, either:
+
+     * Show nothing, or
+     * Show actions applicable to all units in the group (e.g., “Hold position”, “Retreat”).
+
+> The Context/Action panel must always represent **what the player can do right now** with the current selection.
+
+---
+
+## G. Input Handling Summary
+
+The UI must obey the following interaction rules:
+
+1. **Region Distinction**
+
+   * First determine if the mouse is in:
+
+     * Gameplay viewport (top 80%), or
+     * UI panel (bottom 20%).
+   * Within the UI panel, further determine:
+
+     * Mini-map region
+     * Selection Summary Panel region
+     * Context/Action Panel region
+
+2. **Mini-Map**
+
+   * **Left-click**: move camera to clicked position (world coordinate).
+   * **Right-click**: send selected units to clicked position (world coordinate).
+
+3. **Gameplay Viewport**
+
+   * Follow rules in `game_guidance`:
+
+     * Left-click: select unit under cursor (or start drag selection).
+     * Click-drag: create selection box, select all units in box.
+     * Right-click: set waypoint/move order to world location under cursor.
+
+4. **Camera Zoom**
+
+   * **Mouse scroll wheel**: zoom camera in/out, affecting:
+
+     * The world view in the gameplay viewport.
+     * The size of the camera rectangle outline on the mini-map.
+
+5. **Context Panel Interaction**
+
+   * Left-click on buttons/elements to:
+
+     * Queue ship production.
+     * Start research.
+     * Purchase upgrades.
+     * Activate abilities.
+   * All interactions must respect resource availability and game rules.
+
+---
+
+## H. Visual Style & Clarity
+
+* UI elements should be:
+
+  * **Simple, high-contrast**, and stylistically compatible with the wireframe aesthetic.
+  * Some flat fills are allowed for the UI itself (panels, backgrounds) as long as they do not contradict the retro feel.
+* The mini-map:
+
+  * Background color should distinguish fogged vs explored vs unexplored regions clearly.
+  * Dots (white, blue, red) must be easily distinguishable at a glance.
+* Text:
+
+  * Must be legible at common resolutions.
+  * Key stats (health/shields/resources) should be easily readable.
+
+---
+
+## I. Implementation Notes (Non-Authoritative Suggestions)
+
+These are **implementation suggestions**, not design changes:
+
+* Use a simple UI layout system or manual layout constants:
+
+  * Example: define `UI_HEIGHT = int(0.2 * SCREEN_HEIGHT)` and derive subregions from that.
+* Represent the mini-map as a simple 2D rectangle where:
+
+  * `map_x = (world_x - world_min_x) / (world_max_x - world_min_x) * minimap_width`
+  * `map_y = (world_y - world_min_y) / (world_max_y - world_min_y) * minimap_height`
+* Keep the UI drawing pass separate from the 3D rendering pass for clarity.
+
+---
+
+## J. Final Reminder to the LLM Coder
+
+* You **must not** modify this `ui_guidance` document or create alternate versions of it.
+* You **must** implement the UI exactly as described:
+
+  * Top 80%: 3D gameplay viewport with angled camera.
+  * Bottom 20%: 2D UI panel.
+  * Bottom-right: interactive mini-map with fog-of-war, white/blue/red dots, and camera rectangle.
+  * Bottom-center: selected unit/selection summary.
+  * Rightmost 25% of UI panel: context/action options based on current selection.
+* When in doubt:
+
+  1. Choose the simplest implementation consistent with this guidance and the other guidance documents.
+  2. Clearly label assumptions and open questions with `TODO` comments for the human designer to review.
