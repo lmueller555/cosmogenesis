@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import List, Mapping, Optional, Tuple
 
 from .ship_registry import ShipDefinition
 from .production import ProductionQueue, ProductionJob
@@ -44,8 +44,26 @@ class Base(Entity):
     production: ProductionQueue = field(default_factory=ProductionQueue)
     spawn_serial: int = field(default=0, init=False, repr=False)
     faction: str = "player"
+    max_health: float = field(init=False)
+    max_shields: float = field(init=False)
+    current_health: float = field(init=False)
+    current_shields: float = field(init=False)
+    armor_value: float = field(init=False)
+    radar_range_value: float = field(init=False)
+    firing_range_value: float = field(init=False)
+    weapon_damage_value: float = field(init=False)
 
     # TODO: Attach upgrade modules and research integration when systems are implemented.
+
+    def __post_init__(self) -> None:
+        self.max_health = float(self.health)
+        self.max_shields = float(self.shields)
+        self.current_health = self.max_health
+        self.current_shields = self.max_shields
+        self.armor_value = float(self.armor)
+        self.radar_range_value = float(self.radar_range)
+        self.firing_range_value = float(self.firing_range)
+        self.weapon_damage_value = float(self.weapon_damage)
 
     def queue_ship(self, ship_name: str) -> ProductionJob:
         """Convenience helper so higher-level systems can add ship orders."""
@@ -56,6 +74,31 @@ class Base(Entity):
         """Advance production timers and return finished ship hulls."""
 
         return self.production.update(dt)
+
+    def apply_stat_multipliers(self, multipliers: Mapping[str, float]) -> None:
+        """Apply research-driven stat changes to this base."""
+
+        def mult(attribute: str) -> float:
+            return float(multipliers.get(attribute, 1.0))
+
+        prev_max_health = self.max_health
+        new_max_health = float(self.health) * mult("health")
+        self.max_health = new_max_health
+        self.current_health = Ship._scale_current_value(  # reuse helper semantics
+            self.current_health, prev_max_health, new_max_health
+        )
+
+        prev_max_shields = self.max_shields
+        new_max_shields = float(self.shields) * mult("shields")
+        self.max_shields = new_max_shields
+        self.current_shields = Ship._scale_current_value(
+            self.current_shields, prev_max_shields, new_max_shields
+        )
+
+        self.armor_value = float(self.armor) * mult("armor")
+        self.weapon_damage_value = float(self.weapon_damage) * mult("weapon_damage")
+        self.firing_range_value = float(self.firing_range) * mult("firing_range")
+        self.radar_range_value = float(self.radar_range) * mult("radar_range")
 
 
 @dataclass
@@ -71,11 +114,31 @@ class Ship(Entity):
     arrival_threshold: float = 6.0
     target: Optional["Ship"] = None
     _weapon_cooldown: float = 0.0
+    max_health: float = field(init=False)
+    max_shields: float = field(init=False)
+    max_energy: float = field(init=False)
+    armor_value: float = field(init=False)
+    energy_regen_value: float = field(init=False)
+    flight_speed: float = field(init=False)
+    weapon_damage_value: float = field(init=False)
+    _visual_range: float = field(init=False)
+    _radar_range: float = field(init=False)
+    _firing_range: float = field(init=False)
 
     def __post_init__(self) -> None:
-        self.current_health = float(self.definition.health)
-        self.current_shields = float(self.definition.shields)
-        self.current_energy = float(self.definition.energy)
+        self.max_health = float(self.definition.health)
+        self.max_shields = float(self.definition.shields)
+        self.max_energy = float(self.definition.energy)
+        self.armor_value = float(self.definition.armor)
+        self.energy_regen_value = float(self.definition.energy_regen)
+        self.flight_speed = float(self.definition.flight_speed)
+        self.weapon_damage_value = float(self.definition.weapon_damage)
+        self._visual_range = float(self.definition.visual_range)
+        self._radar_range = float(self.definition.radar_range)
+        self._firing_range = float(self.definition.firing_range)
+        self.current_health = self.max_health
+        self.current_shields = self.max_shields
+        self.current_energy = self.max_energy
 
     @property
     def name(self) -> str:
@@ -87,15 +150,15 @@ class Ship(Entity):
 
     @property
     def visual_range(self) -> float:
-        return self.definition.visual_range
+        return self._visual_range
 
     @property
     def radar_range(self) -> float:
-        return self.definition.radar_range
+        return self._radar_range
 
     @property
     def firing_range(self) -> float:
-        return self.definition.firing_range
+        return self._firing_range
 
     def set_move_target(self, target: Optional[Vec2]) -> None:
         """Assign a new destination for this ship (``None`` clears orders)."""
@@ -138,13 +201,13 @@ class Ship(Entity):
         dx = self.move_target[0] - self.position[0]
         dy = self.move_target[1] - self.position[1]
         distance = math.hypot(dx, dy)
-        if distance <= self.arrival_threshold or self.definition.flight_speed <= 0.0:
+        if distance <= self.arrival_threshold or self.flight_speed <= 0.0:
             # Snap to target to avoid jitter and clear the order.
             self.position = self.move_target
             self.move_target = None
             return
 
-        max_step = self.definition.flight_speed * dt
+        max_step = self.flight_speed * dt
         if max_step <= 0.0:
             return
 
@@ -172,7 +235,7 @@ class Ship(Entity):
 
         # TODO: Pull weapon cadence from guidance once specified.
         self._weapon_cooldown = 1.0
-        return self.definition.weapon_damage
+        return self.weapon_damage_value
 
     def apply_damage(self, amount: float) -> bool:
         """Apply ``amount`` of damage, returning ``True`` if the ship is destroyed."""
@@ -189,5 +252,51 @@ class Ship(Entity):
             self.current_health -= amount
 
         return self.current_health <= 0.0
+
+    def apply_stat_multipliers(self, multipliers: Mapping[str, float]) -> None:
+        """Apply cumulative research modifiers provided by ``multipliers``."""
+
+        def mult(attribute: str) -> float:
+            return float(multipliers.get(attribute, 1.0))
+
+        prev_max_health = self.max_health
+        new_max_health = float(self.definition.health) * mult("health")
+        self.max_health = new_max_health
+        self.current_health = self._scale_current_value(
+            self.current_health, prev_max_health, new_max_health
+        )
+
+        prev_max_shields = self.max_shields
+        new_max_shields = float(self.definition.shields) * mult("shields")
+        self.max_shields = new_max_shields
+        self.current_shields = self._scale_current_value(
+            self.current_shields, prev_max_shields, new_max_shields
+        )
+
+        prev_max_energy = self.max_energy
+        new_max_energy = float(self.definition.energy) * mult("energy")
+        self.max_energy = new_max_energy
+        self.current_energy = self._scale_current_value(
+            self.current_energy, prev_max_energy, new_max_energy
+        )
+
+        self.armor_value = float(self.definition.armor) * mult("armor")
+        self.energy_regen_value = float(self.definition.energy_regen) * mult("energy_regen")
+        self.flight_speed = float(self.definition.flight_speed) * mult("flight_speed")
+        self.weapon_damage_value = (
+            float(self.definition.weapon_damage) * mult("weapon_damage")
+        )
+        self._visual_range = float(self.definition.visual_range) * mult("visual_range")
+        self._radar_range = float(self.definition.radar_range) * mult("radar_range")
+        self._firing_range = float(self.definition.firing_range) * mult("firing_range")
+
+    @staticmethod
+    def _scale_current_value(current: float, old_max: float, new_max: float) -> float:
+        if new_max <= 0.0:
+            return 0.0
+        if old_max <= 0.0:
+            return new_max
+        ratio = current / old_max if old_max > 0 else 1.0
+        return min(new_max, ratio * new_max)
 
     # TODO: Combat stances, AI hooks, aura tracking, etc.

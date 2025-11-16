@@ -41,7 +41,7 @@ class World:
         completed_research = self.research_manager.update(dt)
         if completed_research is not None:
             # TODO: propagate stat bonuses / notifications once UI exists.
-            pass
+            self._refresh_research_bonuses()
 
     def issue_move_order(self, destination: Vec2) -> None:
         """Send every selected ship toward ``destination``."""
@@ -101,6 +101,7 @@ class World:
         spawn_pos = _spawn_ring_position(base.position, ring_index, radius)
         ship = Ship(position=spawn_pos, definition=ship_definition, faction=base.faction)
         # TODO: hook into fleet organization / command auras once implemented.
+        self._apply_ship_research(ship)
         self.ships.append(ship)
 
     def _update_combat(self, dt: float) -> None:
@@ -129,6 +130,26 @@ class World:
                 if ship in self.selected_ships:
                     self.selected_ships.remove(ship)
 
+    def _apply_ship_research(self, ship: Ship) -> None:
+        if ship.faction != "player":
+            return
+        multipliers = self.research_manager.ship_stat_multipliers(ship.definition.ship_class)
+        ship.apply_stat_multipliers(multipliers)
+
+    def _apply_base_research(self, base: Base) -> None:
+        if base.faction != "player":
+            return
+        multipliers = self.research_manager.base_stat_multipliers(base.name)
+        base.apply_stat_multipliers(multipliers)
+
+    def _refresh_research_bonuses(self) -> None:
+        """Recompute stats for all friendly entities after research completion."""
+
+        for ship in self.ships:
+            self._apply_ship_research(ship)
+        for base in self.bases:
+            self._apply_base_research(base)
+
 
 def create_initial_world() -> World:
     """Create a simple sandbox world with one planetoid and one Astral Citadel."""
@@ -154,12 +175,15 @@ def create_initial_world() -> World:
 
     base = Base(position=(160.0, 0.0))
     world.bases.append(base)
+    world._apply_base_research(base)
 
     # Seed a handful of strike/escort ships for visualization tests.
     spearling = Ship(position=(400.0, 120.0), definition=get_ship_definition("Spearling"))
     warden = Ship(position=(520.0, -80.0), definition=get_ship_definition("Warden"))
     iron_halberd = Ship(position=(-280.0, 200.0), definition=get_ship_definition("Iron Halberd"))
-    world.ships.extend([spearling, warden, iron_halberd])
+    for ship in (spearling, warden, iron_halberd):
+        world._apply_ship_research(ship)
+        world.ships.append(ship)
 
     # Spawn a few enemy ships to exercise combat logic.
     enemy_positions = [(-200.0, -120.0), (-360.0, -80.0), (-420.0, 160.0)]
