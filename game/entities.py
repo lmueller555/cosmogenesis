@@ -239,6 +239,7 @@ class Ship(Entity):
     _radar_range: float = field(init=False)
     _firing_range: float = field(init=False)
     worker_assignment: Optional[WorkerAssignment] = field(default=None, repr=False)
+    collision_radius: float = field(init=False, repr=False)
     _turn_alignment_tolerance: float = field(default=3.0, init=False, repr=False)
     _attack_move_engaged: bool = field(default=False, init=False, repr=False)
 
@@ -259,6 +260,7 @@ class Ship(Entity):
         self.current_shields = self.max_shields
         self.current_energy = self.max_energy
         self.rotation = self._wrap_angle(self.rotation)
+        self.collision_radius = 0.5 * self._model_scale_for(self.definition.ship_class)
 
     @property
     def name(self) -> str:
@@ -483,6 +485,22 @@ class Ship(Entity):
         if wrapped < 0.0:
             wrapped += 360.0
         return wrapped
+
+    @staticmethod
+    def _model_scale_for(ship_class: str) -> float:
+        """Approximate render scale for each ship class (matches draw system)."""
+
+        if ship_class == "Strike":
+            return 0.7
+        if ship_class == "Escort":
+            return 1.0
+        if ship_class == "Line":
+            return 1.3
+        if ship_class == "Capital":
+            return 1.6
+        if ship_class == "Utility":
+            return 0.6
+        return 1.0
 
     @staticmethod
     def _normalize_angle(angle: float) -> float:
