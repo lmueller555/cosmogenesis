@@ -115,10 +115,14 @@ def run() -> None:
                     if layout.is_in_gameplay(event.pos):
                         clamped = layout.clamp_to_gameplay(event.pos)
                         world_pos = camera.screen_to_world(clamped)
-                        world.issue_move_order(_clamp_to_world(world, world_pos))
+                        behavior = "attack" if pygame.key.get_pressed()[pygame.K_a] else "move"
+                        world.issue_move_order(
+                            _clamp_to_world(world, world_pos), behavior=behavior
+                        )
                     elif layout.is_in_minimap(event.pos):
                         world_target = _minimap_to_world(world, layout, event.pos)
-                        world.issue_move_order(world_target)
+                        behavior = "attack" if pygame.key.get_pressed()[pygame.K_a] else "move"
+                        world.issue_move_order(world_target, behavior=behavior)
             elif event.type == pygame.MOUSEWHEEL:
                 camera.zoom(event.y)
             elif event.type == pygame.MOUSEMOTION:
@@ -136,18 +140,27 @@ def run() -> None:
                     end_world = camera.screen_to_world(end_screen)
                     select_ships_in_rect(world, start_world, end_world, additive=additive)
                 else:
+                    attack_pressed = pygame.key.get_pressed()[pygame.K_a]
                     if layout.is_in_gameplay(event.pos):
                         clamped = layout.clamp_to_gameplay(event.pos)
                         world_pos = camera.screen_to_world(clamped)
+                        if world_pos is None:
+                            continue
+                        clamped_world = _clamp_to_world(world, world_pos)
+                        if attack_pressed and world.selected_ships:
+                            world.issue_move_order(clamped_world, behavior="attack")
+                            continue
                         ship = pick_ship(world, world_pos)
                         if ship is not None:
                             select_single_ship(world, ship, additive=additive)
-                        else:
-                            base = pick_base(world, world_pos)
-                            if base is not None:
-                                select_base(world, base)
-                            elif not additive:
-                                clear_selection(world)
+                            continue
+                        base = pick_base(world, world_pos)
+                        if base is not None:
+                            select_base(world, base)
+                        elif world.selected_ships:
+                            world.issue_move_order(clamped_world, behavior="move")
+                        elif not additive:
+                            clear_selection(world)
 
         handle_camera_input(camera, dt)
         world.update(dt)

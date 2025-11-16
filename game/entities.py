@@ -221,6 +221,7 @@ class Ship(Entity):
     current_shields: float = field(init=False)
     current_energy: float = field(init=False)
     move_target: Optional[Vec2] = None
+    move_behavior: str = field(default="move")
     arrival_threshold: float = 6.0
     target: Optional["Ship"] = None
     _weapon_cooldown: float = 0.0
@@ -239,6 +240,7 @@ class Ship(Entity):
     _firing_range: float = field(init=False)
     worker_assignment: Optional[WorkerAssignment] = field(default=None, repr=False)
     _turn_alignment_tolerance: float = field(default=3.0, init=False, repr=False)
+    _attack_move_engaged: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.max_health = float(self.definition.health)
@@ -282,10 +284,23 @@ class Ship(Entity):
     def firing_range(self) -> float:
         return self._firing_range
 
-    def set_move_target(self, target: Optional[Vec2]) -> None:
+    def set_move_target(self, target: Optional[Vec2], *, behavior: str = "move") -> None:
         """Assign a new destination for this ship (``None`` clears orders)."""
 
         self.move_target = target
+        if target is None:
+            self.move_behavior = "move"
+        else:
+            self.move_behavior = behavior
+        self._attack_move_engaged = False
+
+    def hold_position_for_attack(self, engaged: bool) -> None:
+        """Pause/resume movement while executing an attack-move order."""
+
+        if self.move_behavior != "attack":
+            self._attack_move_engaged = False
+            return
+        self._attack_move_engaged = engaged
 
     def is_enemy(self, other: "Ship") -> bool:
         return self.faction != other.faction
@@ -321,6 +336,10 @@ class Ship(Entity):
             return
 
         if self.move_target is None:
+            self._decelerate(dt)
+            return
+
+        if self.move_behavior == "attack" and self._attack_move_engaged:
             self._decelerate(dt)
             return
 
