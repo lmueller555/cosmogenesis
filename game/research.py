@@ -185,6 +185,52 @@ class ResearchManager:
             return True
         return any(node.id in self._completed for node in linked_nodes)
 
+    # ------------------------------------------------------------------
+    # Stat bonus aggregation helpers
+    # ------------------------------------------------------------------
+    def _completed_bonuses(self) -> Iterable[StatBonus]:
+        for node_id in self._completed:
+            node = self._nodes[node_id]
+            for bonus in node.stat_bonuses:
+                yield bonus
+
+    @staticmethod
+    def _accumulate_bonus(multipliers: Dict[str, float], attribute: str, amount: float) -> None:
+        multipliers[attribute] = multipliers.get(attribute, 1.0) + amount
+
+    def ship_stat_multipliers(self, ship_class: str) -> Dict[str, float]:
+        """Return multiplicative modifiers for the provided ``ship_class``."""
+
+        multipliers: Dict[str, float] = {}
+        for bonus in self._completed_bonuses():
+            if bonus.scope == "all_ships":
+                self._accumulate_bonus(multipliers, bonus.attribute, bonus.amount)
+            elif bonus.scope == "ship_class" and bonus.target == ship_class:
+                self._accumulate_bonus(multipliers, bonus.attribute, bonus.amount)
+        return multipliers
+
+    def base_stat_multipliers(self, base_name: str) -> Dict[str, float]:
+        """Return multiplicative modifiers for the named base (Astral Citadel)."""
+
+        multipliers: Dict[str, float] = {}
+        for bonus in self._completed_bonuses():
+            if bonus.scope != "base":
+                continue
+            if bonus.target not in ("*", base_name):
+                continue
+            self._accumulate_bonus(multipliers, bonus.attribute, bonus.amount)
+        return multipliers
+
+    def facility_stat_multipliers(self) -> Dict[str, float]:
+        """Placeholder for facility stats – provided for future facility entities."""
+
+        multipliers: Dict[str, float] = {}
+        for bonus in self._completed_bonuses():
+            if bonus.scope != "facility":
+                continue
+            self._accumulate_bonus(multipliers, bonus.attribute, bonus.amount)
+        return multipliers
+
 
 # ----------------------------------------------------------------------
 # Canonical node registry sourced from `research_guidance`.
