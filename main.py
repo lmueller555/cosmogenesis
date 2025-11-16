@@ -104,6 +104,9 @@ def run() -> None:
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                if world.pending_construction is not None:
+                    world.cancel_pending_construction()
+                    continue
                 base = world.selected_base
                 if base is not None and base.faction == world.player_faction:
                     if world.cancel_last_ship_order(base):
