@@ -445,11 +445,7 @@ class World:
         for job in completed:
             if job in self.facility_jobs:
                 self.facility_jobs.remove(job)
-            base = job.base
-            slot_index = self._next_facility_slot(base)
-            position = self._facility_slot_position(base, slot_index)
-            facility = Facility(position=position, definition=job.definition, host_base=base)
-            self.add_facility(facility)
+            self._attach_facility_to_base(job.base, job.definition)
 
     def _next_facility_slot(self, base: Base) -> int:
         return sum(1 for facility in self.facilities if facility.host_base == base)
@@ -462,6 +458,22 @@ class World:
             base.position[0] + math.cos(angle) * radius,
             base.position[1] + math.sin(angle) * radius,
         )
+
+    def _attach_facility_to_base(
+        self,
+        base: Base,
+        definition: FacilityDefinition,
+        *,
+        position: Optional[Vec2] = None,
+    ) -> Facility:
+        """Instantiate ``definition`` near ``base`` and register it with the world."""
+
+        if position is None:
+            slot_index = self._next_facility_slot(base)
+            position = self._facility_slot_position(base, slot_index)
+        facility = Facility(position=position, definition=definition, host_base=base)
+        self.add_facility(facility)
+        return facility
 
 
 def create_initial_world() -> World:
@@ -493,28 +505,13 @@ def create_initial_world() -> World:
     world.bases.append(base)
     world._apply_base_research(base)
 
-    # Stub in Shipwright Foundry + Fleet Forge attached to the Astral Citadel.
+    # Stub in Shipwright Foundry + Fleet Forge + Research Nexus per facility guidance.
     shipwright_def = get_facility_definition("ShipwrightFoundry")
     fleet_forge_def = get_facility_definition("FleetForge")
-    shipwright = Facility(
-        position=world._facility_slot_position(base, world._next_facility_slot(base)),
-        definition=shipwright_def,
-        host_base=base,
-    )
-    research_nexus = Facility(
-        position=base.position,
-        facility_type="ResearchNexus",
-        name="Research Nexus",
-        host_base=base,
-    )
-    world.add_facility(shipwright)
-    fleet_forge = Facility(
-        position=world._facility_slot_position(base, world._next_facility_slot(base)),
-        definition=fleet_forge_def,
-        host_base=base,
-    )
-    world.add_facility(fleet_forge)
-    world.add_facility(research_nexus)
+    research_def = get_facility_definition("ResearchNexus")
+    world._attach_facility_to_base(base, shipwright_def)
+    world._attach_facility_to_base(base, research_def, position=base.position)
+    world._attach_facility_to_base(base, fleet_forge_def)
 
     # Seed a handful of strike/escort ships for visualization tests.
     spearling = Ship(position=(400.0, 120.0), definition=get_ship_definition("Spearling"))
