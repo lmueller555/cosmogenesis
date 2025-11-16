@@ -262,6 +262,8 @@ class UIPanelRenderer:
         )
         cursor_y += 24
 
+        cursor_y = self._draw_facility_section(world, cursor_x, cursor_y, world.selected_base)
+        cursor_y += 18
         cursor_y = self._draw_research_section(world, rect, cursor_x, cursor_y)
         cursor_y += 18
         self._draw_construction_section(
@@ -786,4 +788,25 @@ class UIPanelRenderer:
     def _ship_class_order(ship_class: str) -> int:
         order = {"Strike": 0, "Escort": 1, "Line": 2, "Capital": 3}
         return order.get(ship_class, 99)
+
+    def _draw_facility_section(
+        self,
+        world: World,
+        cursor_x: float,
+        cursor_y: float,
+        base: Optional[Base],
+    ) -> float:
+        self._draw_text(cursor_x, cursor_y, "Operational Facilities", self._context_text)
+        cursor_y += 24
+        facilities = world.facilities_for_base(base)
+        if not facilities:
+            self._draw_text(cursor_x, cursor_y, "No facilities constructed.", self._muted_text)
+            return cursor_y + 22
+        for facility in facilities:
+            display_name = facility.name or world.facility_display_name(facility.facility_type)
+            state = "Online" if facility.online else "Offline"
+            color = self._text_color if facility.online else self._muted_text
+            self._draw_text(cursor_x, cursor_y, f"{display_name}: {state}", color)
+            cursor_y += 20
+        return cursor_y
 

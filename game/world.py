@@ -170,6 +170,18 @@ class World:
                 return base
         return None
 
+    def facilities_for_base(self, base: Optional[Base]) -> List[Facility]:
+        """Return facilities filtered to ``base`` (or all when ``None``)."""
+
+        if base is None:
+            return list(self.facilities)
+        return [facility for facility in self.facilities if facility.host_base == base]
+
+    def facility_display_name(self, facility_type: str) -> str:
+        """Return a human-friendly facility name for UI surfaces."""
+
+        return FACILITY_DISPLAY_NAMES.get(facility_type, facility_type)
+
     def unlocked_ship_definitions(self) -> List[ShipDefinition]:
         """Expose the ship hulls currently unlocked for production."""
 
@@ -196,7 +208,7 @@ class World:
 
         facility_type = self._required_facility_for_ship(definition)
         if facility_type is not None and not self._is_facility_online(facility_type):
-            friendly_name = FACILITY_DISPLAY_NAMES.get(facility_type, facility_type)
+            friendly_name = self.facility_display_name(facility_type)
             return False, f"{friendly_name} offline"
 
         if self.resources < definition.resource_cost:
@@ -398,8 +410,15 @@ def create_initial_world() -> World:
         name="Fleet Forge",
         host_base=base,
     )
+    research_nexus = Facility(
+        position=base.position,
+        facility_type="ResearchNexus",
+        name="Research Nexus",
+        host_base=base,
+    )
     world.add_facility(shipwright)
     world.add_facility(fleet_forge)
+    world.add_facility(research_nexus)
 
     # Seed a handful of strike/escort ships for visualization tests.
     spearling = Ship(position=(400.0, 120.0), definition=get_ship_definition("Spearling"))
