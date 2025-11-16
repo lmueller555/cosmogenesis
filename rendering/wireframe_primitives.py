@@ -564,3 +564,92 @@ def create_oblivion_spire_mesh() -> WireframeMesh:
     segments.extend([(4, 8), (5, 9), (8, 9)])
     segments.append((2, 3))
     return _extrude_outline(vertices, segments, height=34.0)
+
+
+def create_shipwright_foundry_mesh() -> WireframeMesh:
+    """Wide cradle-like module reflecting early-ship fabrication berths."""
+
+    outline = [
+        (-65.0, -25.0),
+        (-50.0, -55.0),
+        (50.0, -55.0),
+        (65.0, -25.0),
+        (65.0, 25.0),
+        (50.0, 55.0),
+        (-50.0, 55.0),
+        (-65.0, 25.0),
+    ]
+    segments = _loop_segments(len(outline))
+    # Internal braces evoke scaffolded gantries.
+    braces = [(0, 4), (1, 5), (2, 6), (3, 7), (0, 6), (1, 7)]
+    segments.extend(braces)
+    return _extrude_outline(outline, segments, height=18.0)
+
+
+def create_fleet_forge_mesh() -> WireframeMesh:
+    """Tall spire with angular shoulders for heavy-hull fabrication."""
+
+    outline = [
+        (-35.0, -80.0),
+        (0.0, -95.0),
+        (35.0, -80.0),
+        (65.0, -40.0),
+        (65.0, 40.0),
+        (35.0, 80.0),
+        (0.0, 95.0),
+        (-35.0, 80.0),
+        (-65.0, 40.0),
+        (-65.0, -40.0),
+    ]
+    segments = _loop_segments(len(outline))
+    cross_braces = [(0, 5), (2, 7), (1, 6), (4, 9)]
+    segments.extend(cross_braces)
+    return _extrude_outline(outline, segments, height=26.0)
+
+
+def create_research_nexus_mesh() -> WireframeMesh:
+    """Hexagonal core with orbiting conduits to emphasize analytics."""
+
+    outline: List[Vec2] = []
+    sides = 6
+    radius = 55.0
+    for i in range(sides):
+        angle = (2 * math.pi * i) / sides
+        outline.append((math.cos(angle) * radius, math.sin(angle) * radius))
+    segments = _loop_segments(len(outline))
+    for i in range(sides):
+        segments.append((i, (i + 2) % sides))
+    return _extrude_outline(outline, segments, height=16.0)
+
+
+def create_defense_grid_node_mesh() -> WireframeMesh:
+    """Square bastion with projecting pylons for the defense grid."""
+
+    outline = [
+        (-50.0, -50.0),
+        (50.0, -50.0),
+        (50.0, 50.0),
+        (-50.0, 50.0),
+    ]
+    pylons = [
+        (-80.0, 0.0),
+        (0.0, -80.0),
+        (80.0, 0.0),
+        (0.0, 80.0),
+    ]
+    segments = _loop_segments(len(outline))
+    pylon_start = len(outline)
+    outline.extend(pylons)
+    for i in range(len(pylons)):
+        current = pylon_start + i
+        next_index = pylon_start + ((i + 1) % len(pylons))
+        segments.append((current, next_index))
+    # Connect pylons back to base corners for readability.
+    connections = [
+        (pylon_start + 0, 0),
+        (pylon_start + 1, 1),
+        (pylon_start + 2, 2),
+        (pylon_start + 3, 3),
+    ]
+    segments.extend(connections)
+    return _extrude_outline(outline, segments, height=20.0)
