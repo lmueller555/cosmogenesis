@@ -7,7 +7,12 @@ from typing import Tuple
 import pygame
 
 from game.camera import Camera2D
-from game.selection import pick_ship, select_single_ship
+from game.selection import (
+    SelectionDragState,
+    pick_ship,
+    select_ships_in_rect,
+    select_single_ship,
+)
 from game.world import create_initial_world
 from rendering.draw_system import WireframeRenderer
 from rendering.opengl_context import initialize_gl, resize_viewport
@@ -44,6 +49,7 @@ def run() -> None:
     world = create_initial_world()
     camera = Camera2D(position=(0.0, 0.0), viewport_size=WINDOW_SIZE)
     renderer = WireframeRenderer()
+    selection_drag = SelectionDragState()
 
     clock = pygame.time.Clock()
     running = True
@@ -59,16 +65,36 @@ def run() -> None:
                 resize_viewport(event.size)
                 camera.update_viewport(event.size)
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                world_pos = camera.screen_to_world(event.pos)
                 if event.button == 1:
-                    ship = pick_ship(world, world_pos)
-                    select_single_ship(world, ship)
+                    selection_drag.begin(event.pos)
                 elif event.button == 3:
+                    world_pos = camera.screen_to_world(event.pos)
                     world.issue_move_order(world_pos)
+            elif event.type == pygame.MOUSEMOTION:
+                if selection_drag.dragging:
+                    selection_drag.update(event.pos)
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                if not selection_drag.dragging:
+                    continue
+                additive = bool(pygame.key.get_mods() & pygame.KMOD_SHIFT)
+                dragged = selection_drag.has_significant_drag()
+                start_screen, end_screen = selection_drag.corners()
+                selection_drag.finish()
+                if dragged:
+                    start_world = camera.screen_to_world(start_screen)
+                    end_world = camera.screen_to_world(end_screen)
+                    select_ships_in_rect(world, start_world, end_world, additive=additive)
+                else:
+                    world_pos = camera.screen_to_world(event.pos)
+                    ship = pick_ship(world, world_pos)
+                    select_single_ship(world, ship, additive=additive)
 
         handle_camera_input(camera, dt)
         world.update(dt)
-        renderer.draw_world(world, camera)
+        selection_box = None
+        if selection_drag.dragging and selection_drag.has_significant_drag():
+            selection_box = selection_drag.corners()
+        renderer.draw_world(world, camera, selection_box=selection_box)
         pygame.display.flip()
 
     pygame.quit()
