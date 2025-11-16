@@ -133,7 +133,7 @@ def run() -> None:
                     elif layout.is_in_minimap(event.pos):
                         world_target = _minimap_to_world(world, layout, event.pos)
                         camera.recenter_on(world_target)
-                    elif layout.context_rect.collidepoint(event.pos):
+                    elif layout.ui_panel_rect.collidepoint(event.pos):
                         ui_renderer.handle_mouse_click(world, layout, event.pos)
                 elif event.button == 3:
                     if layout.is_in_gameplay(event.pos):
@@ -160,7 +160,11 @@ def run() -> None:
                         behavior = "attack" if pygame.key.get_pressed()[pygame.K_a] else "move"
                         world.issue_move_order(world_target, behavior=behavior)
             elif event.type == pygame.MOUSEWHEEL:
-                camera.zoom(event.y)
+                mouse_pos = pygame.mouse.get_pos()
+                if layout.context_rect.collidepoint(mouse_pos):
+                    ui_renderer.scroll_context(layout, event.y)
+                else:
+                    camera.zoom(event.y)
             elif event.type == pygame.MOUSEMOTION:
                 if selection_drag.dragging:
                     selection_drag.update(layout.clamp_to_gameplay(event.pos))
