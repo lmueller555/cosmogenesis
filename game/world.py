@@ -27,11 +27,14 @@ class World:
 
         for ship in self.ships:
             ship.update(dt)
+            ship.tick_weapon_cooldown(dt)
 
         for base in self.bases:
             completed = base.update(dt)
             for ship_definition in completed:
                 self._spawn_ship_from_base(base, ship_definition)
+
+        self._update_combat(dt)
 
     def issue_move_order(self, destination: Vec2) -> None:
         """Send every selected ship toward ``destination``."""
@@ -46,9 +49,35 @@ class World:
         base.spawn_serial += 1
         radius = 220.0 + 45.0 * (ring_index // 12)
         spawn_pos = _spawn_ring_position(base.position, ring_index, radius)
-        ship = Ship(position=spawn_pos, definition=ship_definition)
+        ship = Ship(position=spawn_pos, definition=ship_definition, faction=base.faction)
         # TODO: hook into fleet organization / command auras once implemented.
         self.ships.append(ship)
+
+    def _update_combat(self, dt: float) -> None:
+        """Resolve simplistic auto-attacks between hostile ships."""
+
+        destroyed: List[Ship] = []
+        for ship in self.ships:
+            if ship.target is None or ship.target not in self.ships or not ship.in_firing_range(ship.target):
+                ship.acquire_target(self.ships)
+            if ship.target is None:
+                continue
+            if not ship.is_enemy(ship.target):
+                ship.clear_target()
+                continue
+            if ship.can_fire():
+                damage = ship.deal_damage()
+                # TODO: Replace with burst fire logic once cadence guidance is available.
+                if ship.target.apply_damage(damage):
+                    destroyed.append(ship.target)
+                    ship.clear_target()
+
+        if destroyed:
+            for ship in destroyed:
+                if ship in self.ships:
+                    self.ships.remove(ship)
+                if ship in self.selected_ships:
+                    self.selected_ships.remove(ship)
 
 
 def create_initial_world() -> World:
@@ -66,6 +95,13 @@ def create_initial_world() -> World:
     warden = Ship(position=(520.0, -80.0), definition=get_ship_definition("Warden"))
     iron_halberd = Ship(position=(-280.0, 200.0), definition=get_ship_definition("Iron Halberd"))
     world.ships.extend([spearling, warden, iron_halberd])
+
+    # Spawn a few enemy ships to exercise combat logic.
+    enemy_positions = [(-200.0, -120.0), (-360.0, -80.0), (-420.0, 160.0)]
+    for idx, pos in enumerate(enemy_positions):
+        definition_name = ["Spearling", "Daggerwing", "Sunlance"][idx]
+        enemy_ship = Ship(position=pos, definition=get_ship_definition(definition_name), faction="enemy")
+        world.ships.append(enemy_ship)
 
     # Queue a few autonomous builds so the production loop is observable.
     base.queue_ship("Spearling")

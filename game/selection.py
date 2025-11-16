@@ -39,11 +39,19 @@ class SelectionDragState:
         return self.start_screen, self.current_screen
 
 
+def _is_selectable(ship: Ship) -> bool:
+    """Restrict selection to the player's faction for now."""
+
+    return ship.faction == "player"
+
+
 def pick_ship(world: World, world_pos: Vec2, radius: float = 80.0) -> Optional[Ship]:
     """Return the closest ship within ``radius`` units of ``world_pos``."""
     best_ship: Optional[Ship] = None
     best_distance_sq = radius * radius
     for ship in world.ships:
+        if not _is_selectable(ship):
+            continue
         dx = ship.position[0] - world_pos[0]
         dy = ship.position[1] - world_pos[1]
         distance_sq = dx * dx + dy * dy
@@ -84,6 +92,8 @@ def select_ships_in_rect(
     max_y = max(corner_a[1], corner_b[1])
 
     for ship in world.ships:
+        if not _is_selectable(ship):
+            continue
         if min_x <= ship.position[0] <= max_x and min_y <= ship.position[1] <= max_y:
             _add_to_selection(world, ship)
 

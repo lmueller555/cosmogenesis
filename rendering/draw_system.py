@@ -48,6 +48,7 @@ class WireframeRenderer:
             "Oblivion Spire": create_oblivion_spire_mesh(),
         }
         self.selection_color: Tuple[float, float, float, float] = (1.0, 0.82, 0.26, 1.0)
+        self.enemy_color: Tuple[float, float, float, float] = (1.0, 0.35, 0.35, 1.0)
 
     def draw_world(
         self,
@@ -71,7 +72,11 @@ class WireframeRenderer:
                 # TODO: add visual fallback for ships without bespoke wireframes.
                 continue
             scale = self._ship_scale_for(ship.definition.ship_class)
-            color = self.selection_color if ship in world.selected_ships else LINE_COLOR
+            color = LINE_COLOR
+            if ship.faction != "player":
+                color = self.enemy_color
+            if ship in world.selected_ships:
+                color = self.selection_color
             self._draw_mesh(mesh, ship.position, scale, camera, color=color)
 
         if selection_box is not None:
