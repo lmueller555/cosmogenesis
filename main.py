@@ -12,6 +12,7 @@ from game.selection import (
     pick_base,
     pick_ship,
     select_base,
+    select_ships_in_camera_view,
     select_ships_in_rect,
     select_single_ship,
 )
@@ -43,6 +44,9 @@ def handle_camera_input(camera: Camera3D, dt: float) -> None:
 
 Vec2 = tuple[float, float]
 
+DOUBLE_CLICK_TIME_MS = 350
+DOUBLE_CLICK_MAX_DISTANCE_SQ = 64.0
+
 
 def _clamp_to_world(world: World, position: Vec2) -> Vec2:
     half_w = world.width * 0.5
@@ -50,6 +54,12 @@ def _clamp_to_world(world: World, position: Vec2) -> Vec2:
     x = max(-half_w, min(half_w, position[0]))
     y = max(-half_h, min(half_h, position[1]))
     return (x, y)
+
+
+def _distance_sq(a: Vec2, b: Vec2) -> float:
+    dx = a[0] - b[0]
+    dy = a[1] - b[1]
+    return dx * dx + dy * dy
 
 
 def _minimap_to_world(world: World, layout: UILayout, point: Vec2) -> Vec2:
@@ -83,6 +93,8 @@ def run() -> None:
     renderer = WireframeRenderer()
     ui_renderer = UIPanelRenderer()
     selection_drag = SelectionDragState()
+    last_left_click_time: int | None = None
+    last_left_click_pos: Vec2 = (0.0, 0.0)
 
     clock = pygame.time.Clock()
     running = True
@@ -135,6 +147,19 @@ def run() -> None:
                 dragged = selection_drag.has_significant_drag()
                 start_screen, end_screen = selection_drag.corners()
                 selection_drag.finish()
+                now = pygame.time.get_ticks()
+                double_click = (
+                    not dragged
+                    and last_left_click_time is not None
+                    and now - last_left_click_time <= DOUBLE_CLICK_TIME_MS
+                    and _distance_sq(event.pos, last_left_click_pos)
+                    <= DOUBLE_CLICK_MAX_DISTANCE_SQ
+                )
+                if dragged:
+                    last_left_click_time = None
+                else:
+                    last_left_click_time = now
+                    last_left_click_pos = event.pos
                 if dragged:
                     start_world = camera.screen_to_world(start_screen)
                     end_world = camera.screen_to_world(end_screen)
@@ -152,7 +177,12 @@ def run() -> None:
                             continue
                         ship = pick_ship(world, world_pos)
                         if ship is not None:
-                            select_single_ship(world, ship, additive=additive)
+                            if double_click:
+                                select_ships_in_camera_view(
+                                    world, camera, ship, additive=additive
+                                )
+                            else:
+                                select_single_ship(world, ship, additive=additive)
                             continue
                         base = pick_base(world, world_pos)
                         if base is not None:

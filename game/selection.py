@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
+from .camera import Camera3D
 from .entities import Base, Ship
 from .world import World
 
@@ -146,6 +147,41 @@ def select_ships_in_rect(
         if not _is_selectable(world, ship):
             continue
         if min_x <= ship.position[0] <= max_x and min_y <= ship.position[1] <= max_y:
+            _add_to_selection(world, ship)
+
+
+def select_ships_in_camera_view(
+    world: World,
+    camera: Camera3D,
+    exemplar: Ship,
+    *,
+    additive: bool = False,
+) -> None:
+    """Select every friendly ship matching ``exemplar`` that's visible on-screen."""
+
+    if not _is_selectable(world, exemplar):
+        return
+
+    viewport_width, viewport_height = camera.viewport_size
+    if viewport_width <= 0 or viewport_height <= 0:
+        return
+
+    if not additive:
+        clear_selection(world)
+    else:
+        world.selected_base = None
+
+    definition_name = exemplar.definition.name
+    for ship in world.ships:
+        if ship.definition.name != definition_name:
+            continue
+        if not _is_selectable(world, ship):
+            continue
+        screen_pos = camera.world_to_screen(ship.position)
+        if screen_pos is None:
+            continue
+        x, y = screen_pos
+        if 0.0 <= x <= viewport_width and 0.0 <= y <= viewport_height:
             _add_to_selection(world, ship)
 
 
