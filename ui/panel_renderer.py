@@ -870,9 +870,25 @@ class UIPanelRenderer:
         columns = max(1, palette_rect.width // (button_width + spacing))
         columns = min(columns, len(definitions)) or 1
         rows = max(1, math.ceil(len(definitions) / columns)) if definitions else 1
+
+        def total_height() -> int:
+            return rows * button_height + (rows - 1) * spacing
+
+        if rows > 0 and total_height() > palette_rect.height:
+            # Scale the buttons vertically so every option stays inside the panel.
+            available = max(0, palette_rect.height - (rows - 1) * spacing)
+            min_height = 96
+            if available < rows * min_height:
+                # Compress spacing if even the minimum height will not fit.
+                spacing = max(8, int(spacing * available / max(1, total_height())))
+                available = max(0, palette_rect.height - (rows - 1) * spacing)
+            button_height = max(min_height, available // max(1, rows))
+            if rows * button_height > max(1, available):
+                button_height = max(1, available // rows)
+
         total_width = columns * button_width + (columns - 1) * spacing
         start_x = palette_rect.left + max(0, (palette_rect.width - total_width) // 2)
-        start_y = palette_rect.top
+        start_y = palette_rect.top + max(0, (palette_rect.height - total_height()) // 2)
 
         for index, definition in enumerate(definitions):
             row = index // columns
