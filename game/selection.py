@@ -39,10 +39,25 @@ class SelectionDragState:
         return self.start_screen, self.current_screen
 
 
-def _is_selectable(ship: Ship) -> bool:
-    """Restrict selection to the player's faction for now."""
+def _is_selectable(world: World, ship: Ship) -> bool:
+    """Return ``True`` if ``ship`` can currently be interacted with by the player."""
 
-    return ship.faction == "player"
+    if ship.faction != world.player_faction:
+        return False
+    return _is_visible_to_player(world, ship)
+
+
+def _is_visible_to_player(world: World, ship: Ship) -> bool:
+    """Check the world's fog-of-war grid to see if ``ship`` is revealed."""
+
+    grid = getattr(world, "visibility", None)
+    if grid is None:
+        return True
+    # Friendly ships always report their own position through telemetry even if the
+    # fog-of-war grid is temporarily missing a mark for the exact cell.
+    if ship.faction == world.player_faction:
+        return True
+    return grid.is_visual(ship.position) or grid.is_radar(ship.position)
 
 
 def pick_ship(world: World, world_pos: Vec2, radius: float = 80.0) -> Optional[Ship]:
@@ -50,7 +65,7 @@ def pick_ship(world: World, world_pos: Vec2, radius: float = 80.0) -> Optional[S
     best_ship: Optional[Ship] = None
     best_distance_sq = radius * radius
     for ship in world.ships:
-        if not _is_selectable(ship):
+        if not _is_selectable(world, ship):
             continue
         dx = ship.position[0] - world_pos[0]
         dy = ship.position[1] - world_pos[1]
@@ -70,7 +85,7 @@ def select_single_ship(world: World, ship: Optional[Ship], *, additive: bool = F
     """Replace or extend the current selection with ``ship`` if provided."""
     if not additive:
         world.selected_ships.clear()
-    if ship is not None:
+    if ship is not None and _is_selectable(world, ship):
         _add_to_selection(world, ship)
 
 
@@ -92,9 +107,7 @@ def select_ships_in_rect(
     max_y = max(corner_a[1], corner_b[1])
 
     for ship in world.ships:
-        if not _is_selectable(ship):
+        if not _is_selectable(world, ship):
             continue
         if min_x <= ship.position[0] <= max_x and min_y <= ship.position[1] <= max_y:
             _add_to_selection(world, ship)
-
-    # TODO: Constrain selection to visible/radar-revealed ships once fog of war is online.
