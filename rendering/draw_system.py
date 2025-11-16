@@ -37,6 +37,7 @@ from .wireframe_primitives import (
     create_auric_veil_mesh,
     create_warden_mesh,
     create_wisp_mesh,
+    create_skimmer_drone_mesh,
 )
 
 
@@ -68,6 +69,7 @@ class WireframeRenderer:
             "Titan's Ward": create_titans_ward_mesh(),
             "Abyssal Crown": create_abyssal_crown_mesh(),
             "Oblivion Spire": create_oblivion_spire_mesh(),
+            "Skimmer Drone": create_skimmer_drone_mesh(),
         }
         self._ship_mesh_bounds: Dict[str, Tuple[float, float, float, float]] = {
             name: self._compute_mesh_bounds(mesh) for name, mesh in self.ship_meshes.items()
@@ -238,6 +240,8 @@ class WireframeRenderer:
             return 1.3
         if ship_class == "Capital":
             return 1.6
+        if ship_class == "Utility":
+            return 0.6
         return 1.0
 
     def _facility_scale(self, facility_type: str) -> float:
