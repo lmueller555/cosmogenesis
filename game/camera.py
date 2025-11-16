@@ -106,9 +106,9 @@ class Camera3D:
         desired = current_distance - scroll_delta * self.zoom_speed
         clamped = max(self.min_zoom, min(self.max_zoom, desired))
         self.position = (
-            self.target[0] - view_dir[0] * clamped,
-            self.target[1] - view_dir[1] * clamped,
-            self.target[2] - view_dir[2] * clamped,
+            self.target[0] + view_dir[0] * clamped,
+            self.target[1] + view_dir[1] * clamped,
+            self.target[2] + view_dir[2] * clamped,
         )
 
     def update_viewport(self, size: Tuple[int, int]) -> None:
