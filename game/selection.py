@@ -6,6 +6,7 @@ from typing import Optional, Tuple
 
 from .entities import Base, Ship
 from .world import World
+from .camera import Camera3D
 
 Vec2 = Tuple[float, float]
 
@@ -146,6 +147,35 @@ def select_ships_in_rect(
         if not _is_selectable(world, ship):
             continue
         if min_x <= ship.position[0] <= max_x and min_y <= ship.position[1] <= max_y:
+            _add_to_selection(world, ship)
+
+
+def select_matching_ships_in_view(
+    world: World,
+    camera: Camera3D,
+    reference_ship: Ship,
+    *,
+    additive: bool = False,
+) -> None:
+    """Select every visible ship matching ``reference_ship`` within the camera view."""
+
+    if not additive:
+        clear_selection(world)
+    else:
+        world.selected_base = None
+
+    viewport_width, viewport_height = camera.viewport_size
+
+    for ship in world.ships:
+        if ship.definition.name != reference_ship.definition.name:
+            continue
+        if not _is_selectable(world, ship):
+            continue
+        screen_pos = camera.world_to_screen(ship.position)
+        if screen_pos is None:
+            continue
+        x, y = screen_pos
+        if 0.0 <= x <= viewport_width and 0.0 <= y <= viewport_height:
             _add_to_selection(world, ship)
 
 

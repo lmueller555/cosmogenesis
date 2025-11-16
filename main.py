@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 import pygame
 
@@ -12,6 +13,7 @@ from game.selection import (
     pick_base,
     pick_ship,
     select_base,
+    select_matching_ships_in_view,
     select_ships_in_rect,
     select_single_ship,
 )
@@ -42,6 +44,39 @@ def handle_camera_input(camera: Camera3D, dt: float) -> None:
 
 
 Vec2 = tuple[float, float]
+
+
+@dataclass
+class DoubleClickTracker:
+    """Helper for detecting double-clicks in the gameplay viewport."""
+
+    threshold_ms: int = 350
+    position_tolerance: float = 6.0
+    last_time_ms: int = 0
+    last_pos: Vec2 = (0.0, 0.0)
+    last_ship_name: str | None = None
+
+    def register(self, time_ms: int, pos: Vec2, ship_name: str | None) -> bool:
+        is_double = False
+        if (
+            ship_name is not None
+            and ship_name == self.last_ship_name
+            and time_ms - self.last_time_ms <= self.threshold_ms
+            and self._distance_sq(pos, self.last_pos)
+            <= self.position_tolerance * self.position_tolerance
+        ):
+            is_double = True
+
+        self.last_time_ms = time_ms
+        self.last_pos = pos
+        self.last_ship_name = ship_name
+        return is_double
+
+    @staticmethod
+    def _distance_sq(a: Vec2, b: Vec2) -> float:
+        dx = a[0] - b[0]
+        dy = a[1] - b[1]
+        return dx * dx + dy * dy
 
 
 def _clamp_to_world(world: World, position: Vec2) -> Vec2:
@@ -83,6 +118,7 @@ def run() -> None:
     renderer = WireframeRenderer()
     ui_renderer = UIPanelRenderer()
     selection_drag = SelectionDragState()
+    double_click_tracker = DoubleClickTracker()
 
     clock = pygame.time.Clock()
     running = True
@@ -140,8 +176,18 @@ def run() -> None:
                         clamped = layout.clamp_to_gameplay(event.pos)
                         world_pos = camera.screen_to_world(clamped)
                         ship = pick_ship(world, world_pos)
+                        click_time = pygame.time.get_ticks()
+                        ship_name = ship.name if ship is not None else None
+                        double_click = double_click_tracker.register(
+                            click_time, event.pos, ship_name
+                        )
                         if ship is not None:
-                            select_single_ship(world, ship, additive=additive)
+                            if double_click:
+                                select_matching_ships_in_view(
+                                    world, camera, ship, additive=additive
+                                )
+                            else:
+                                select_single_ship(world, ship, additive=additive)
                         else:
                             base = pick_base(world, world_pos)
                             if base is not None:
