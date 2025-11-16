@@ -43,6 +43,30 @@ FACILITY_DISPLAY_NAMES = {
 
 
 @dataclass
+class BeamVisual:
+    """Transient visual representing a beam fired between two ships."""
+
+    start: Vec2
+    end: Vec2
+    faction: str
+    duration: float = 0.35
+    age: float = 0.0
+
+    def advance(self, dt: float) -> None:
+        if dt > 0.0:
+            self.age += dt
+
+    def alpha(self) -> float:
+        if self.duration <= 0.0:
+            return 0.0
+        remaining = max(0.0, 1.0 - self.age / self.duration)
+        return min(1.0, remaining)
+
+    def expired(self) -> bool:
+        return self.age >= self.duration
+
+
+@dataclass
 class World:
     width: float
     height: float
@@ -60,6 +84,7 @@ class World:
     visibility: VisibilityGrid = field(init=False, repr=False)
     player_faction: str = "player"
     enemy_ai: EnemyAIController | None = field(default=None, init=False, repr=False)
+    beam_visuals: List[BeamVisual] = field(default_factory=list, repr=False)
 
     # TODO: Extend fog-of-war to account for enemy sensors and neutral factions.
 
@@ -89,6 +114,7 @@ class World:
 
         self._update_facility_construction(dt)
         self._update_combat(dt)
+        self._update_beam_visuals(dt)
         completed_research = self.research_manager.update(dt)
         if completed_research is not None:
             # TODO: propagate stat bonuses / notifications once UI exists.
@@ -284,11 +310,13 @@ class World:
                 ship.clear_target()
                 continue
             if ship.can_fire():
+                target = ship.target
                 damage = ship.deal_damage()
                 # TODO: Replace with burst fire logic once cadence guidance is available.
-                if ship.target.apply_damage(damage):
-                    destroyed.append(ship.target)
+                if target is not None and target.apply_damage(damage):
+                    destroyed.append(target)
                     ship.clear_target()
+                self._spawn_beam_visual(ship, target)
 
         if destroyed:
             for ship in destroyed:
@@ -316,6 +344,26 @@ class World:
             self._apply_ship_research(ship)
         for base in self.bases:
             self._apply_base_research(base)
+
+    def _spawn_beam_visual(self, attacker: Ship, target: Ship | None) -> None:
+        if target is None:
+            return
+        beam = BeamVisual(
+            start=(attacker.position[0], attacker.position[1]),
+            end=(target.position[0], target.position[1]),
+            faction=attacker.faction,
+        )
+        self.beam_visuals.append(beam)
+
+    def _update_beam_visuals(self, dt: float) -> None:
+        if dt <= 0.0 or not self.beam_visuals:
+            return
+        active: List[BeamVisual] = []
+        for beam in self.beam_visuals:
+            beam.advance(dt)
+            if not beam.expired():
+                active.append(beam)
+        self.beam_visuals = active
 
     def _sync_facility_type(self, facility_type: str) -> None:
         """Push current online/offline state for ``facility_type`` to research."""
