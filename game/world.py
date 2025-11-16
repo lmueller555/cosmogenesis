@@ -5,7 +5,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-from .entities import Base, Facility, Planetoid, Ship
+from .entities import Asteroid, Base, Facility, Planetoid, Ship
 from .ship_registry import (
     ShipDefinition,
     all_ship_definitions,
@@ -41,6 +41,7 @@ class World:
     width: float
     height: float
     planetoids: List[Planetoid] = field(default_factory=list)
+    asteroids: List[Asteroid] = field(default_factory=list)
     bases: List[Base] = field(default_factory=list)
     ships: List[Ship] = field(default_factory=list)
     facilities: List[Facility] = field(default_factory=list)
@@ -117,6 +118,20 @@ class World:
         if planetoid not in self.planetoids:
             return False
         planetoid.set_controller(faction)
+        return True
+
+    def asteroids_controlled_by(self, faction: str) -> List[Asteroid]:
+        """Return every asteroid currently aligned with ``faction``."""
+
+        return [asteroid for asteroid in self.asteroids if asteroid.controller == faction]
+
+    def set_asteroid_controller(self, asteroid: Asteroid, faction: str) -> bool:
+        """Assign ``asteroid`` to ``faction`` if it belongs to this world."""
+
+        if asteroid not in self.asteroids:
+            return False
+        asteroid.set_controller(faction)
+        # TODO: Integrate contested capture/combat when mining units exist.
         return True
 
     # ------------------------------------------------------------------
@@ -287,26 +302,27 @@ class World:
     def _resource_income_per_second(self) -> float:
         """Compute the passive resource income for the current tick."""
 
-        if not self.planetoids:
-            return 0.0
-
-        controlled_planetoids = self.planetoids_controlled_by(self.player_faction)
-        if not controlled_planetoids:
-            return 0.0
-
         planetoid_income = 0.0
-        for planetoid in controlled_planetoids:
-            # ``resource_yield`` is interpreted as resources per minute per guidance.
+        for planetoid in self.planetoids_controlled_by(self.player_faction):
             planetoid_income += planetoid.resource_yield / 60.0
 
-        if planetoid_income <= 0.0:
+        asteroid_income = 0.0
+        for asteroid in self.asteroids_controlled_by(self.player_faction):
+            asteroid_income += asteroid.resource_yield / 60.0
+
+        if planetoid_income <= 0.0 and asteroid_income <= 0.0:
             return 0.0
 
-        bonus = self.research_manager.economy_bonus(
+        planetoid_bonus = self.research_manager.economy_bonus(
             target="planetoid_income", attribute="resource_rate"
         )
-        multiplier = 1.0 + bonus
-        return planetoid_income * multiplier
+        asteroid_bonus = self.research_manager.economy_bonus(
+            target="asteroid_income", attribute="resource_rate"
+        )
+
+        total_planetoids = planetoid_income * (1.0 + planetoid_bonus)
+        total_asteroids = asteroid_income * (1.0 + asteroid_bonus)
+        return total_planetoids + total_asteroids
 
     def refresh_visibility(self) -> None:
         """Rebuild fog-of-war state based on friendly sensors."""
@@ -350,6 +366,13 @@ def create_initial_world() -> World:
     planetoid = Planetoid(position=(0.0, 0.0), radius=90.0, resource_yield=120)
     world.planetoids.append(planetoid)
     world.set_planetoid_controller(planetoid, world.player_faction)
+
+    asteroid_positions = [(-320.0, 260.0), (280.0, -280.0), (520.0, 140.0)]
+    for idx, position in enumerate(asteroid_positions):
+        radius = 24.0 + idx * 3.0
+        asteroid = Asteroid(position=position, radius=radius, resource_yield=35 + idx * 5)
+        world.asteroids.append(asteroid)
+        world.set_asteroid_controller(asteroid, world.player_faction)
 
     base = Base(position=(160.0, 0.0))
     world.bases.append(base)

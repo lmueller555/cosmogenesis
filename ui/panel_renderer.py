@@ -56,6 +56,11 @@ class UIPanelRenderer:
             "enemy": (1.0, 0.35, 0.35, 0.9),
             "neutral": (0.7, 0.7, 0.7, 0.85),
         }
+        self._asteroid_colors = {
+            "player": (0.35, 0.75, 0.95, 0.75),
+            "enemy": (1.0, 0.4, 0.4, 0.75),
+            "neutral": (0.6, 0.6, 0.6, 0.7),
+        }
         self._research_buttons: List[ResearchButton] = []
         self._production_buttons: List[ProductionButton] = []
 
@@ -386,6 +391,12 @@ class UIPanelRenderer:
             color = self._planetoid_color(planetoid.controller)
             self._draw_minimap_planetoid(center, radius, color)
 
+        for asteroid in world.asteroids:
+            center = self._world_to_minimap(asteroid.position, rect, bounds)
+            radius = self._asteroid_radius(asteroid.radius, rect, bounds)
+            color = self._asteroid_color(asteroid.controller)
+            self._draw_minimap_asteroid(center, radius, color)
+
         for ship in world.ships:
             color = self._friendly_color
             if ship.faction != "player":
@@ -520,6 +531,13 @@ class UIPanelRenderer:
             return self._planetoid_colors["enemy"]
         return self._planetoid_colors["neutral"]
 
+    def _asteroid_color(self, controller: str) -> Tuple[float, float, float, float]:
+        if controller == "player":
+            return self._asteroid_colors["player"]
+        if controller == "enemy":
+            return self._asteroid_colors["enemy"]
+        return self._asteroid_colors["neutral"]
+
     def _planetoid_radius(
         self, world_radius: float, rect: pygame.Rect, bounds: Tuple[float, float, float, float]
     ) -> float:
@@ -533,6 +551,11 @@ class UIPanelRenderer:
         radius = max(3.0, min(radius_x, radius_y))
         return radius
 
+    def _asteroid_radius(
+        self, world_radius: float, rect: pygame.Rect, bounds: Tuple[float, float, float, float]
+    ) -> float:
+        return max(2.0, self._planetoid_radius(world_radius, rect, bounds) * 0.45)
+
     def _draw_minimap_planetoid(
         self,
         center: Vec2,
@@ -544,6 +567,22 @@ class UIPanelRenderer:
         gl.glBegin(gl.GL_TRIANGLE_FAN)
         gl.glVertex2f(center[0], center[1])
         for i in range(segments + 1):
+            angle = (i / segments) * 2.0 * 3.14159265
+            x = center[0] + radius * math.cos(angle)
+            y = center[1] + radius * math.sin(angle)
+            gl.glVertex2f(x, y)
+        gl.glEnd()
+
+    def _draw_minimap_asteroid(
+        self,
+        center: Vec2,
+        radius: float,
+        color: Tuple[float, float, float, float],
+        segments: int = 10,
+    ) -> None:
+        gl.glColor4f(*color)
+        gl.glBegin(gl.GL_LINE_LOOP)
+        for i in range(segments):
             angle = (i / segments) * 2.0 * 3.14159265
             x = center[0] + radius * math.cos(angle)
             y = center[1] + radius * math.sin(angle)

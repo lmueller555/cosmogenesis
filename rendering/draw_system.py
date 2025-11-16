@@ -15,6 +15,7 @@ from .wireframe_primitives import (
     WireframeMesh,
     create_astral_citadel_mesh,
     create_planetoid_mesh,
+    create_asteroid_mesh,
     create_abyssal_crown_mesh,
     create_daggerwing_mesh,
     create_iron_halberd_mesh,
@@ -35,6 +36,7 @@ class WireframeRenderer:
 
     def __init__(self) -> None:
         self.planetoid_mesh = create_planetoid_mesh(radius=60.0)
+        self.asteroid_mesh = create_asteroid_mesh(radius=24.0)
         self.astral_citadel_mesh = create_astral_citadel_mesh()
         self.ship_meshes: Dict[str, WireframeMesh] = {
             "Spearling": create_spearling_mesh(),
@@ -75,6 +77,10 @@ class WireframeRenderer:
         for planetoid in world.planetoids:
             scale = planetoid.radius / 60.0
             self._draw_mesh(self.planetoid_mesh, planetoid.position, scale)
+
+        for asteroid in world.asteroids:
+            scale = asteroid.radius / 24.0
+            self._draw_mesh(self.asteroid_mesh, asteroid.position, scale)
 
         for base in world.bases:
             self._draw_mesh(self.astral_citadel_mesh, base.position, 1.0)
