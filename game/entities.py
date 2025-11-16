@@ -230,11 +230,15 @@ class Ship(Entity):
     armor_value: float = field(init=False)
     energy_regen_value: float = field(init=False)
     flight_speed: float = field(init=False)
+    acceleration: float = field(init=False)
+    turn_rate: float = field(init=False)
+    current_speed: float = field(default=0.0, init=False)
     weapon_damage_value: float = field(init=False)
     _visual_range: float = field(init=False)
     _radar_range: float = field(init=False)
     _firing_range: float = field(init=False)
     worker_assignment: Optional[WorkerAssignment] = field(default=None, repr=False)
+    _turn_alignment_tolerance: float = field(default=3.0, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.max_health = float(self.definition.health)
@@ -243,6 +247,8 @@ class Ship(Entity):
         self.armor_value = float(self.definition.armor)
         self.energy_regen_value = float(self.definition.energy_regen)
         self.flight_speed = float(self.definition.flight_speed)
+        self.acceleration = float(self.definition.acceleration)
+        self.turn_rate = float(self.definition.turn_rate)
         self.weapon_damage_value = float(self.definition.weapon_damage)
         self._visual_range = float(self.definition.visual_range)
         self._radar_range = float(self.definition.radar_range)
@@ -250,6 +256,7 @@ class Ship(Entity):
         self.current_health = self.max_health
         self.current_shields = self.max_shields
         self.current_energy = self.max_energy
+        self.rotation = self._wrap_angle(self.rotation)
 
     @property
     def name(self) -> str:
@@ -310,32 +317,51 @@ class Ship(Entity):
     def update(self, dt: float) -> None:
         """Advance ship state – currently only simple point-to-point movement."""
 
+        if dt <= 0.0:
+            return
+
         if self.move_target is None:
+            self._decelerate(dt)
             return
 
         dx = self.move_target[0] - self.position[0]
         dy = self.move_target[1] - self.position[1]
         distance = math.hypot(dx, dy)
-        if distance <= self.arrival_threshold or self.flight_speed <= 0.0:
-            # Snap to target to avoid jitter and clear the order.
+        if distance <= self.arrival_threshold:
             self.position = self.move_target
             self.move_target = None
+            self.current_speed = 0.0
             return
 
-        max_step = self.flight_speed * dt
-        if max_step <= 0.0:
+        desired_angle = math.degrees(math.atan2(dy, dx))
+        angle_diff = self._angle_difference(desired_angle, self.rotation)
+        max_turn = max(0.0, self.turn_rate) * dt
+        if max_turn > 0.0:
+            turn_amount = max(-max_turn, min(max_turn, angle_diff))
+            self.rotation = self._wrap_angle(self.rotation + turn_amount)
+        aligned = abs(self._angle_difference(desired_angle, self.rotation)) <= self._turn_alignment_tolerance
+
+        if not aligned:
+            self._decelerate(dt)
             return
 
-        if distance <= max_step:
+        self._accelerate(dt)
+        travel_distance = self.current_speed * dt
+        if travel_distance <= 0.0:
+            return
+
+        if distance <= travel_distance:
             self.position = self.move_target
             self.move_target = None
+            self.current_speed = 0.0
             return
 
-        direction_x = dx / distance
-        direction_y = dy / distance
+        rad = math.radians(self.rotation)
+        direction_x = math.cos(rad)
+        direction_y = math.sin(rad)
         self.position = (
-            self.position[0] + direction_x * max_step,
-            self.position[1] + direction_y * max_step,
+            self.position[0] + direction_x * travel_distance,
+            self.position[1] + direction_y * travel_distance,
         )
 
     def tick_weapon_cooldown(self, dt: float) -> None:
@@ -398,12 +424,53 @@ class Ship(Entity):
         self.armor_value = float(self.definition.armor) * mult("armor")
         self.energy_regen_value = float(self.definition.energy_regen) * mult("energy_regen")
         self.flight_speed = float(self.definition.flight_speed) * mult("flight_speed")
+        self.acceleration = float(self.definition.acceleration) * mult("acceleration")
+        self.turn_rate = float(self.definition.turn_rate) * mult("turn_rate")
         self.weapon_damage_value = (
             float(self.definition.weapon_damage) * mult("weapon_damage")
         )
         self._visual_range = float(self.definition.visual_range) * mult("visual_range")
         self._radar_range = float(self.definition.radar_range) * mult("radar_range")
         self._firing_range = float(self.definition.firing_range) * mult("firing_range")
+        self.current_speed = min(self.current_speed, self.flight_speed)
+
+    def _accelerate(self, dt: float) -> None:
+        if self.flight_speed <= 0.0:
+            self.current_speed = 0.0
+            return
+        if self.acceleration <= 0.0:
+            self.current_speed = self.flight_speed
+            return
+        self.current_speed = min(
+            self.flight_speed,
+            self.current_speed + self.acceleration * dt,
+        )
+
+    def _decelerate(self, dt: float) -> None:
+        if self.current_speed <= 0.0:
+            self.current_speed = 0.0
+            return
+        if self.acceleration <= 0.0:
+            self.current_speed = 0.0
+            return
+        self.current_speed = max(0.0, self.current_speed - self.acceleration * dt)
+
+    def _angle_difference(self, target_angle: float, current_angle: float) -> float:
+        return self._normalize_angle(target_angle - current_angle)
+
+    @staticmethod
+    def _wrap_angle(angle: float) -> float:
+        wrapped = angle % 360.0
+        if wrapped < 0.0:
+            wrapped += 360.0
+        return wrapped
+
+    @staticmethod
+    def _normalize_angle(angle: float) -> float:
+        normalized = (angle + 180.0) % 360.0 - 180.0
+        if normalized == -180.0:
+            return 180.0
+        return normalized
 
     @staticmethod
     def _scale_current_value(current: float, old_max: float, new_max: float) -> float:

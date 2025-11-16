@@ -190,6 +190,8 @@ class UIPanelRenderer:
             f"Energy: {focus.current_energy:.0f}/{focus.max_energy:.0f} (+{focus.energy_regen_value:.1f}/s)",
             f"Weapon Damage: {focus.weapon_damage_value:.0f}",
             f"Flight Speed: {focus.flight_speed:.0f}",
+            f"Acceleration: {focus.acceleration:.0f}",
+            f"Turn Rate: {focus.turn_rate:.0f}\u00b0/s",
             f"Visual Range: {focus.visual_range:.0f}",
             f"Radar Range: {focus.radar_range:.0f}",
             f"Firing Range: {focus.firing_range:.0f}",
