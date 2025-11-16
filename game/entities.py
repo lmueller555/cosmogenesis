@@ -11,6 +11,15 @@ from .facility_registry import FacilityDefinition
 
 Vec2 = Tuple[float, float]
 
+PASSIVE_REPAIR_DELAY = 5.0
+PASSIVE_REPAIR_RATE = 0.005
+
+
+def _passive_repair_per_second(max_health: float) -> float:
+    if max_health <= 0.0:
+        return 0.0
+    return float(math.ceil(PASSIVE_REPAIR_RATE * max_health))
+
 
 @dataclass
 class Entity:
@@ -83,6 +92,7 @@ class Base(Entity):
     radar_range_value: float = field(init=False)
     firing_range_value: float = field(init=False)
     weapon_damage_value: float = field(init=False)
+    _time_since_damage: float = field(default=PASSIVE_REPAIR_DELAY, init=False, repr=False)
 
     # TODO: Attach upgrade modules and research integration when systems are implemented.
 
@@ -99,6 +109,7 @@ class Base(Entity):
         self.radar_range_value = float(self.radar_range)
         self.firing_range_value = float(self.firing_range)
         self.weapon_damage_value = float(self.weapon_damage)
+        self._time_since_damage = PASSIVE_REPAIR_DELAY
 
     def queue_ship(self, ship_name: str) -> ProductionJob:
         """Convenience helper so higher-level systems can add ship orders."""
@@ -143,6 +154,26 @@ class Base(Entity):
         )
         self.energy_regen_value = float(self.energy_regen) * mult("energy_regen")
 
+    def repair_full(self) -> None:
+        self.current_health = self.max_health
+        self.current_shields = self.max_shields
+        self._time_since_damage = PASSIVE_REPAIR_DELAY
+
+    def tick_passive_repair(self, dt: float) -> None:
+        if dt <= 0.0:
+            return
+        self._time_since_damage += dt
+        if self.current_health >= self.max_health:
+            return
+        if self._time_since_damage < PASSIVE_REPAIR_DELAY:
+            return
+        repair_rate = _passive_repair_per_second(self.max_health)
+        if repair_rate <= 0.0:
+            return
+        self.current_health = min(
+            self.max_health, self.current_health + repair_rate * dt
+        )
+
 
 @dataclass
 class Facility(Entity):
@@ -156,6 +187,7 @@ class Facility(Entity):
     max_health: float = field(init=False)
     max_shields: float = field(init=False)
     armor_value: float = field(default=0.0, init=False)
+    _time_since_damage: float = field(default=PASSIVE_REPAIR_DELAY, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.max_health = float(self.definition.health)
@@ -163,6 +195,7 @@ class Facility(Entity):
         self.current_health = self.max_health
         self.current_shields = self.max_shields
         # TODO: Populate armor/energy stats once guidance specifies them per facility.
+        self._time_since_damage = PASSIVE_REPAIR_DELAY
 
     @property
     def facility_type(self) -> str:
@@ -182,6 +215,7 @@ class Facility(Entity):
 
         if amount <= 0.0:
             return False
+        self._time_since_damage = 0.0
         if self.current_shields > 0.0:
             shield_damage = min(amount, self.current_shields)
             self.current_shields -= shield_damage
@@ -197,6 +231,22 @@ class Facility(Entity):
     def repair_full(self) -> None:
         self.current_health = self.max_health
         self.current_shields = self.max_shields
+        self._time_since_damage = PASSIVE_REPAIR_DELAY
+
+    def tick_passive_repair(self, dt: float) -> None:
+        if dt <= 0.0:
+            return
+        self._time_since_damage += dt
+        if self.current_health >= self.max_health:
+            return
+        if self._time_since_damage < PASSIVE_REPAIR_DELAY:
+            return
+        repair_rate = _passive_repair_per_second(self.max_health)
+        if repair_rate <= 0.0:
+            return
+        self.current_health = min(
+            self.max_health, self.current_health + repair_rate * dt
+        )
 
 
 @dataclass
@@ -242,6 +292,7 @@ class Ship(Entity):
     collision_radius: float = field(init=False, repr=False)
     _turn_alignment_tolerance: float = field(default=3.0, init=False, repr=False)
     _attack_move_engaged: bool = field(default=False, init=False, repr=False)
+    _time_since_damage: float = field(default=PASSIVE_REPAIR_DELAY, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.max_health = float(self.definition.health)
@@ -261,6 +312,7 @@ class Ship(Entity):
         self.current_energy = self.max_energy
         self.rotation = self._wrap_angle(self.rotation)
         self.collision_radius = 0.5 * self._model_scale_for(self.definition.ship_class)
+        self._time_since_damage = PASSIVE_REPAIR_DELAY
 
     @property
     def name(self) -> str:
@@ -389,6 +441,21 @@ class Ship(Entity):
         if self._weapon_cooldown > 0.0:
             self._weapon_cooldown = max(0.0, self._weapon_cooldown - dt)
 
+    def tick_passive_repair(self, dt: float) -> None:
+        if dt <= 0.0:
+            return
+        self._time_since_damage += dt
+        if self.current_health >= self.max_health:
+            return
+        if self._time_since_damage < PASSIVE_REPAIR_DELAY:
+            return
+        repair_rate = _passive_repair_per_second(self.max_health)
+        if repair_rate <= 0.0:
+            return
+        self.current_health = min(
+            self.max_health, self.current_health + repair_rate * dt
+        )
+
     def can_fire(self) -> bool:
         return self._weapon_cooldown <= 0.0 and self.target is not None
 
@@ -404,6 +471,7 @@ class Ship(Entity):
 
         if amount <= 0.0:
             return False
+        self._time_since_damage = 0.0
 
         if self.current_shields > 0.0:
             shield_damage = min(amount, self.current_shields)
