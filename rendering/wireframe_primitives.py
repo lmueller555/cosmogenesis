@@ -297,6 +297,57 @@ def create_daggerwing_mesh() -> WireframeMesh:
     return _extrude_outline(vertices, segments, height=12.0)
 
 
+def create_skimmer_drone_mesh() -> WireframeMesh:
+    """Utility worker craft with a bulbous cargo pod."""
+
+    fuselage_outline: List[Vec2] = [
+        (0.0, 22.0),
+        (-6.0, 12.0),
+        (-4.0, 6.0),
+        (-3.0, 0.0),
+        (-5.0, -6.0),
+        (-8.0, -14.0),
+        (-11.0, -24.0),
+        (-9.0, -32.0),
+        (-5.0, -38.0),
+        (0.0, -42.0),
+        (5.0, -38.0),
+        (9.0, -32.0),
+        (11.0, -24.0),
+        (8.0, -14.0),
+        (5.0, -6.0),
+        (3.0, 0.0),
+        (4.0, 6.0),
+        (6.0, 12.0),
+    ]
+
+    cargo_pod = [
+        (-6.0, -22.0),
+        (-6.0, -34.0),
+        (6.0, -22.0),
+        (6.0, -34.0),
+    ]
+
+    vertices = fuselage_outline + cargo_pod
+    segments = _loop_segments(len(fuselage_outline))
+    base_index = len(fuselage_outline)
+    segments.extend(
+        [
+            (base_index, base_index + 1),
+            (base_index + 1, base_index + 3),
+            (base_index + 3, base_index + 2),
+            (base_index + 2, base_index),
+            (5, base_index),
+            (6, base_index + 1),
+            (12, base_index + 2),
+            (13, base_index + 3),
+            (base_index + 1, 9),
+            (base_index + 3, 9),
+        ]
+    )
+    return _extrude_outline(vertices, segments, height=9.0)
+
+
 def create_warden_mesh() -> WireframeMesh:
     vertices: List[Vec2] = [
         (-18.0, 14.0),
