@@ -86,6 +86,7 @@ class World:
     player_faction: str = "player"
     enemy_ai: EnemyAIController | None = field(default=None, init=False, repr=False)
     beam_visuals: List[BeamVisual] = field(default_factory=list, repr=False)
+    pending_construction: "PendingFacilityPlacement" | None = None
 
     # TODO: Extend fog-of-war to account for enemy sensors and neutral factions.
 
@@ -96,6 +97,7 @@ class World:
     def update(self, dt: float) -> None:
         """Advance simulation forward by ``dt`` seconds."""
 
+        self._discard_invalid_pending_construction()
         passive_rate = self._resource_income_per_second()
         passive_income = passive_rate * dt if dt > 0.0 else 0.0
         total_income = passive_income
@@ -450,6 +452,11 @@ class World:
                 active.append(beam)
         self.beam_visuals = active
 
+    def cancel_pending_construction(self) -> None:
+        """Abort any facility placement ghost currently following the cursor."""
+
+        self.pending_construction = None
+
     def _update_worker_behaviors(self, dt: float) -> float:
         if not self.ships:
             return 0.0
@@ -507,6 +514,76 @@ class World:
         if capacity > 0.0:
             harvest = min(harvest, capacity)
         return max(0.0, harvest)
+
+    def worker_construction_status(
+        self, worker: Optional[Ship], definition: FacilityDefinition
+    ) -> Tuple[bool, Optional[str]]:
+        """Return whether ``worker`` can begin placing ``definition``."""
+
+        if worker is None or worker not in self.ships:
+            return False, "Select a worker"
+        if not worker.is_worker:
+            return False, "Not a worker"
+        if worker.faction != self.player_faction:
+            return False, "Worker unavailable"
+        if self._worker_busy(worker):
+            return False, "Worker busy"
+        base = self._worker_host_base(worker)
+        if base is None:
+            return False, "No supporting base"
+        return self.facility_construction_status(base, definition)
+
+    def start_worker_construction(self, worker: Ship, facility_type: str) -> bool:
+        """Begin the placement flow for ``facility_type`` using ``worker``."""
+
+        if worker not in self.ships or not worker.is_worker:
+            return False
+        try:
+            definition = get_facility_definition(facility_type)
+        except KeyError:
+            return False
+        allowed, _ = self.worker_construction_status(worker, definition)
+        if not allowed:
+            return False
+        self.pending_construction = PendingFacilityPlacement(
+            worker=worker, definition=definition
+        )
+        return True
+
+    def confirm_worker_construction(self, position: Vec2) -> bool:
+        """Finalize placement for the pending worker construction order."""
+
+        pending = self.pending_construction
+        if pending is None:
+            return False
+        worker = pending.worker
+        if worker not in self.ships or worker.faction != self.player_faction:
+            self.pending_construction = None
+            return False
+        definition = pending.definition
+        base = self._worker_host_base(worker)
+        if base is None:
+            self.pending_construction = None
+            return False
+        allowed, _ = self.worker_construction_status(worker, definition)
+        if not allowed:
+            self.pending_construction = None
+            return False
+        clamped = self._clamp_world_position(position)
+        job = FacilityConstructionJob(
+            base=base,
+            definition=definition,
+            remaining_time=definition.build_time,
+            position=clamped,
+            worker=worker,
+            state="travel",
+        )
+        worker.worker_assignment = None
+        worker.set_move_target(clamped)
+        self.resources -= definition.resource_cost
+        self.facility_jobs.append(job)
+        self.pending_construction = None
+        return True
 
     def _configure_worker(
         self,
@@ -649,19 +726,22 @@ class World:
             if job.base not in self.bases:
                 self.facility_jobs.remove(job)
                 continue
-            if dt <= 0.0:
+            if job.worker is None:
+                if dt <= 0.0:
+                    continue
+                job.remaining_time -= dt
+                if job.remaining_time <= 0.0:
+                    completed.append(job)
                 continue
-            job.remaining_time -= dt
-            if job.remaining_time <= 0.0:
+            if self._advance_worker_construction(job, dt):
                 completed.append(job)
         for job in completed:
-            if job in self.facility_jobs:
-                self.facility_jobs.remove(job)
-            base = job.base
-            slot_index = self._next_facility_slot(base)
-            position = self._facility_slot_position(base, slot_index)
-            facility = Facility(position=position, definition=job.definition, host_base=base)
-            self.add_facility(facility)
+            if job not in self.facility_jobs:
+                continue
+            self.facility_jobs.remove(job)
+            if job.worker is not None and job.state != "complete":
+                continue
+            self._finalize_facility_job(job)
 
     def _next_facility_slot(self, base: Base) -> int:
         return sum(1 for facility in self.facilities if facility.host_base == base)
@@ -674,6 +754,101 @@ class World:
             base.position[0] + math.cos(angle) * radius,
             base.position[1] + math.sin(angle) * radius,
         )
+
+    def _advance_worker_construction(
+        self, job: "FacilityConstructionJob", dt: float
+    ) -> bool:
+        worker = job.worker
+        if worker is None:
+            return False
+        if worker not in self.ships:
+            self.resources += job.definition.resource_cost
+            job.state = "canceled"
+            return True
+        target = job.position or worker.position
+        if job.state == "travel":
+            if worker.move_target is None:
+                if self._distance_sq(worker.position, target) <= max(
+                    9.0, worker.arrival_threshold * worker.arrival_threshold
+                ):
+                    job.state = "building"
+            else:
+                worker.set_move_target(target)
+            return False
+        if job.state == "building":
+            if dt <= 0.0:
+                return False
+            job.remaining_time = max(0.0, job.remaining_time - dt)
+            if job.remaining_time <= 0.0:
+                job.state = "complete"
+                self._send_worker_back_to_mining(worker, job.base)
+                return True
+        return False
+
+    def _finalize_facility_job(self, job: "FacilityConstructionJob") -> None:
+        base = job.base
+        if base not in self.bases:
+            return
+        if job.position is not None:
+            position = job.position
+        else:
+            slot_index = self._next_facility_slot(base)
+            position = self._facility_slot_position(base, slot_index)
+        facility = Facility(position=position, definition=job.definition, host_base=base)
+        self.add_facility(facility)
+
+    def _send_worker_back_to_mining(self, worker: Ship, base: Base) -> None:
+        if worker not in self.ships:
+            return
+        target = self._nearest_owned_planetoid(worker.position)
+        if base not in self.bases:
+            base = self.player_primary_base() or base
+        if target is None and base is not None:
+            target = self._default_worker_target(base)
+        if base is None or target is None:
+            worker.set_move_target(None)
+            return
+        self._configure_worker(worker, base, resource_target=target)
+
+    def _nearest_owned_planetoid(self, position: Vec2) -> Planetoid | None:
+        owned = [node for node in self.planetoids if node.controller == self.player_faction]
+        if not owned:
+            return None
+        return min(owned, key=lambda node: self._distance_sq(node.position, position))
+
+    def _worker_busy(self, worker: Ship) -> bool:
+        if self.pending_construction and self.pending_construction.worker is worker:
+            return True
+        return any(job.worker is worker for job in self.facility_jobs)
+
+    def _worker_host_base(self, worker: Ship) -> Base | None:
+        assignment = worker.worker_assignment
+        if assignment and assignment.home_base in self.bases:
+            return assignment.home_base
+        return self.player_primary_base()
+
+    def _distance_sq(self, a: Vec2, b: Vec2) -> float:
+        dx = a[0] - b[0]
+        dy = a[1] - b[1]
+        return dx * dx + dy * dy
+
+    def _clamp_world_position(self, position: Vec2) -> Vec2:
+        half_w = self.width * 0.5
+        half_h = self.height * 0.5
+        x = max(-half_w, min(half_w, position[0]))
+        y = max(-half_h, min(half_h, position[1]))
+        return (x, y)
+
+    def _discard_invalid_pending_construction(self) -> None:
+        pending = self.pending_construction
+        if pending is None:
+            return
+        worker = pending.worker
+        if worker not in self.ships or worker.faction != self.player_faction:
+            self.pending_construction = None
+            return
+        if worker not in self.selected_ships:
+            self.pending_construction = None
 
 
 def create_initial_world() -> World:
@@ -763,4 +938,13 @@ class FacilityConstructionJob:
     base: Base
     definition: FacilityDefinition
     remaining_time: float
+    position: Vec2 | None = None
+    worker: Ship | None = None
+    state: str = "building"
+
+
+@dataclass
+class PendingFacilityPlacement:
+    worker: Ship
+    definition: FacilityDefinition
 

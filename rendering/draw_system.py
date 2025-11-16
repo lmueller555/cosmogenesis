@@ -98,6 +98,18 @@ class WireframeRenderer:
         self._fog_unexplored_color: Tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.82)
         self._friendly_beam_color: Tuple[float, float, float] = (0.45, 0.88, 1.0)
         self._enemy_beam_color: Tuple[float, float, float] = (1.0, 0.45, 0.45)
+        self._construction_preview_color: Tuple[float, float, float, float] = (
+            0.35,
+            0.78,
+            1.0,
+            0.7,
+        )
+        self._construction_site_color: Tuple[float, float, float, float] = (
+            0.95,
+            0.35,
+            0.35,
+            1.0,
+        )
         self._overlay_font = pygame.font.SysFont("Consolas", 16)
         self._spawn_button_rect: Optional[pygame.Rect] = None
         self._spawn_menu_rect: Optional[pygame.Rect] = None
@@ -161,6 +173,8 @@ class WireframeRenderer:
             color = self._facility_color(world, facility)
             self._draw_mesh(mesh, position, scale, color=color, elevation=8.0)
 
+        self._draw_active_construction_sites(world)
+
         for ship in world.ships:
             if ship.faction != "player" and not world.visibility.is_visual(ship.position):
                 continue
@@ -182,6 +196,7 @@ class WireframeRenderer:
                 rotation_degrees=ship.rotation,
             )
 
+        self._draw_pending_construction_preview(world, camera, layout)
         self._draw_beam_visuals(world)
 
         self._draw_fog_overlay(world, camera)
@@ -278,6 +293,50 @@ class WireframeRenderer:
             return (0.45, 0.5, 0.62, 1.0)
         return LINE_COLOR
 
+    def _draw_active_construction_sites(self, world: World) -> None:
+        jobs = getattr(world, "facility_jobs", None)
+        if not jobs:
+            return
+        for job in jobs:
+            if job.worker is None or job.position is None:
+                continue
+            mesh = self.facility_meshes.get(job.definition.facility_type)
+            if mesh is None:
+                continue
+            scale = self._facility_scale(job.definition.facility_type)
+            self._draw_mesh(
+                mesh,
+                job.position,
+                scale,
+                color=self._construction_site_color,
+                elevation=8.0,
+            )
+
+    def _draw_pending_construction_preview(
+        self, world: World, camera: Camera3D, layout: UILayout
+    ) -> None:
+        pending = getattr(world, "pending_construction", None)
+        if pending is None:
+            return
+        mesh = self.facility_meshes.get(pending.definition.facility_type)
+        if mesh is None:
+            return
+        mouse_pos = pygame.mouse.get_pos()
+        if not layout.is_in_gameplay(mouse_pos):
+            return
+        clamped = layout.clamp_to_gameplay(mouse_pos)
+        world_pos = camera.screen_to_world(clamped)
+        if world_pos is None:
+            return
+        scale = self._facility_scale(pending.definition.facility_type)
+        self._draw_mesh(
+            mesh,
+            world_pos,
+            scale,
+            color=self._construction_preview_color,
+            elevation=8.0,
+        )
+
     def _should_draw_facility(self, world: World, facility: Facility) -> bool:
         base = facility.host_base
         if base is not None and base.faction == world.player_faction:
@@ -369,6 +428,7 @@ class WireframeRenderer:
         try:
             self._draw_ship_status_bars(world, camera)
             self._draw_base_progress_bars(world, camera)
+            self._draw_worker_construction_bars(world, camera)
             self._draw_selected_base_spawn_ui(world, camera)
             self._draw_waypoint_lines(world, camera)
         finally:
@@ -466,6 +526,22 @@ class WireframeRenderer:
                 continue
             self._draw_progress_bar(screen_pos, job)
 
+    def _draw_worker_construction_bars(self, world: World, camera: Camera3D) -> None:
+        jobs = getattr(world, "facility_jobs", None)
+        if not jobs:
+            return
+        for job in jobs:
+            if job.worker is None or job.position is None or job.state != "building":
+                continue
+            screen_pos = camera.world_to_screen(job.position)
+            if screen_pos is None:
+                continue
+            total_time = max(0.1, job.definition.build_time)
+            progress = 1.0 - max(0.0, job.remaining_time) / total_time
+            self._draw_construction_progress_bar(
+                screen_pos, job.definition.name, progress
+            )
+
     def _draw_progress_bar(self, screen_pos: Tuple[float, float], job) -> None:
         definition = job.ship_definition
         total_time = max(0.1, definition.build_time)
@@ -493,6 +569,35 @@ class WireframeRenderer:
             fill = pygame.Rect(inner.left, inner.top, fill_width, inner.height)
             self._draw_overlay_rect(fill, (0.2, 0.6, 1.0, 0.95))
         label = f"{definition.name}"
+        label_width, _ = self._overlay_font.size(label)
+        text_x = rect.centerx - label_width / 2
+        text_y = rect.top - 16
+        if text_y < 0:
+            text_y = rect.bottom + 4
+        self._draw_overlay_text(text_x, text_y, label, (220, 230, 255))
+
+    def _draw_construction_progress_bar(
+        self, screen_pos: Tuple[float, float], label: str, progress: float
+    ) -> None:
+        width = 140
+        height = 10
+        bar_offset = 60
+        rect = pygame.Rect(
+            int(screen_pos[0] - width / 2),
+            int(screen_pos[1] - bar_offset - height),
+            width,
+            height,
+        )
+        viewport_rect = pygame.Rect(0, 0, *self._current_viewport_size)
+        if viewport_rect.width > 0 and viewport_rect.height > 0:
+            rect.clamp_ip(viewport_rect.inflate(-8, -8))
+        self._draw_overlay_rect(rect, (0.04, 0.05, 0.08, 0.9))
+        self._draw_overlay_outline(rect, (0.3, 0.38, 0.52, 1.0))
+        inner = rect.inflate(-4, -4)
+        fill_width = int(inner.width * max(0.0, min(1.0, progress)))
+        if fill_width > 0:
+            fill = pygame.Rect(inner.left, inner.top, fill_width, inner.height)
+            self._draw_overlay_rect(fill, (0.95, 0.35, 0.35, 0.95))
         label_width, _ = self._overlay_font.size(label)
         text_x = rect.centerx - label_width / 2
         text_y = rect.top - 16

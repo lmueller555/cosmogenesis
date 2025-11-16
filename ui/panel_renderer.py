@@ -41,6 +41,7 @@ class FacilityButton:
     facility_type: str
     rect: pygame.Rect
     enabled: bool = True
+    context: str = "base"
 
 
 class UIPanelRenderer:
@@ -140,9 +141,16 @@ class UIPanelRenderer:
                 if world.try_start_research(button.node_id):
                     return True
         base = world.selected_base
+        worker = self._primary_worker(world)
         for button in self._facility_buttons:
             if not button.rect.collidepoint(pos):
                 continue
+            if button.context == "worker":
+                if worker is None:
+                    return True
+                if button.enabled:
+                    world.start_worker_construction(worker, button.facility_type)
+                return True
             if base is None:
                 return True
             if button.enabled and world.queue_facility(base, button.facility_type):
@@ -473,6 +481,8 @@ class UIPanelRenderer:
         selection_kind = self._context_selection_kind(world)
         if selection_kind == "base":
             self._draw_base_context(world, rect, cursor_x, cursor_y)
+        elif selection_kind == "worker":
+            self._draw_worker_context(world, rect, cursor_x, cursor_y)
         elif selection_kind == "ship":
             self._draw_ship_context(world, cursor_x, cursor_y)
         else:
@@ -482,8 +492,16 @@ class UIPanelRenderer:
         if world.selected_base is not None:
             return "base"
         if world.selected_ships:
+            if all(ship.is_worker for ship in world.selected_ships):
+                return "worker"
             return "ship"
         return "none"
+
+    def _primary_worker(self, world: World) -> Optional[Ship]:
+        for ship in world.selected_ships:
+            if ship.is_worker:
+                return ship
+        return None
 
     def _draw_base_context(
         self, world: World, rect: pygame.Rect, cursor_x: float, cursor_y: float
@@ -546,6 +564,115 @@ class UIPanelRenderer:
         self._draw_text(cursor_x + 12, cursor_y, summary, self._muted_text)
         cursor_y += 28
         return cursor_y
+
+    def _draw_worker_context(
+        self, world: World, rect: pygame.Rect, cursor_x: float, cursor_y: float
+    ) -> None:
+        worker = self._primary_worker(world)
+        if worker is None:
+            self._draw_text(cursor_x, cursor_y, "Select a worker drone.", self._muted_text)
+            return
+        self._draw_text(cursor_x, cursor_y, f"{worker.name} Construction", self._context_text)
+        cursor_y += 24
+        income_suffix = ""
+        if world.resource_income_rate > 0.0:
+            income_suffix = f" (+{world.resource_income_rate:.1f}/s)"
+        self._draw_text(
+            cursor_x,
+            cursor_y,
+            f"Resources: {world.resources:.0f}{income_suffix}",
+            self._muted_text,
+        )
+        cursor_y += 22
+
+        pending = getattr(world, "pending_construction", None)
+        if pending is not None and pending.worker is worker:
+            self._draw_text(
+                cursor_x,
+                cursor_y,
+                f"Placing: {pending.definition.name}",
+                self._text_color,
+            )
+            cursor_y += 20
+            self._draw_text(
+                cursor_x,
+                cursor_y,
+                "Left-click in the sector to set the build site.",
+                self._muted_text,
+            )
+            cursor_y += 24
+
+        jobs = [job for job in world.facility_jobs if job.worker is worker]
+        if jobs:
+            for job in jobs:
+                if job.state == "travel":
+                    self._draw_text(
+                        cursor_x,
+                        cursor_y,
+                        f"En route: {job.definition.name}",
+                        self._text_color,
+                    )
+                    cursor_y += 20
+                    self._draw_text(
+                        cursor_x,
+                        cursor_y,
+                        "Worker traveling to construction site.",
+                        self._muted_text,
+                    )
+                    cursor_y += 24
+                    continue
+                total_time = max(0.1, job.definition.build_time)
+                progress = 1.0 - max(0.0, job.remaining_time) / total_time
+                self._draw_text(
+                    cursor_x,
+                    cursor_y,
+                    f"Constructing: {job.definition.name} ({progress * 100:4.0f}% complete)",
+                    self._text_color,
+                )
+                cursor_y += 20
+                self._draw_text(
+                    cursor_x,
+                    cursor_y,
+                    f"{max(0.0, job.remaining_time):0.1f}s remaining",
+                    self._muted_text,
+                )
+                cursor_y += 24
+        else:
+            self._draw_text(
+                cursor_x,
+                cursor_y,
+                "No active construction orders.",
+                self._muted_text,
+            )
+            cursor_y += 22
+
+        cursor_y += 8
+        self._draw_text(cursor_x, cursor_y, "Available Facilities", self._context_text)
+        cursor_y += 24
+
+        definitions = sorted(all_facility_definitions(), key=lambda definition: definition.name)
+        pending_type = (
+            pending.definition.facility_type
+            if pending is not None and pending.worker is worker
+            else None
+        )
+        for definition in definitions:
+            height = 88
+            button_rect = pygame.Rect(rect.left + 8, int(cursor_y), rect.width - 16, height)
+            enabled, status_line = world.worker_construction_status(worker, definition)
+            if pending_type == definition.facility_type:
+                enabled = False
+                status_line = "Awaiting placement"
+            self._draw_facility_button(button_rect, definition, enabled, status_line)
+            self._facility_buttons.append(
+                FacilityButton(
+                    facility_type=definition.facility_type,
+                    rect=button_rect,
+                    enabled=enabled,
+                    context="worker",
+                )
+            )
+            cursor_y += height + 8
 
     def _draw_ship_context(self, world: World, cursor_x: float, cursor_y: float) -> None:
         self._draw_text(cursor_x, cursor_y, "Ship Abilities", self._context_text)
@@ -681,12 +808,30 @@ class UIPanelRenderer:
         jobs = world.facility_jobs_for_base(base)
         if jobs:
             for job in jobs:
+                if job.worker is not None and job.state == "travel":
+                    self._draw_text(
+                        cursor_x,
+                        cursor_y,
+                        f"Worker en route: {job.definition.name}",
+                        self._text_color,
+                    )
+                    cursor_y += 20
+                    self._draw_text(
+                        cursor_x,
+                        cursor_y,
+                        "Awaiting worker arrival at build site.",
+                        self._muted_text,
+                    )
+                    cursor_y += 24
+                    continue
+                if job.worker is not None and job.state != "building":
+                    continue
                 total_time = max(0.1, job.definition.build_time)
                 progress = 1.0 - max(0.0, job.remaining_time) / total_time
                 self._draw_text(
                     cursor_x,
                     cursor_y,
-                    f"Building: {job.definition.name} ({progress * 100:4.0f}% complete)",
+                    f"Constructing: {job.definition.name} ({progress * 100:4.0f}% complete)",
                     self._text_color,
                 )
                 cursor_y += 20
@@ -725,6 +870,7 @@ class UIPanelRenderer:
                     facility_type=definition.facility_type,
                     rect=button_rect,
                     enabled=enabled,
+                    context="base",
                 )
             )
             cursor_y += height + 8
