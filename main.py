@@ -66,7 +66,7 @@ def _minimap_to_world(world: World, layout: UILayout, point: Vec2) -> Vec2:
     rect = layout.minimap_rect
     if rect.width <= 0 or rect.height <= 0:
         return (0.0, 0.0)
-    normalized_x = (point[0] - rect.left) / rect.width
+    normalized_x = (rect.right - point[0]) / rect.width
     normalized_y = (rect.bottom - point[1]) / rect.height
     world_x = (normalized_x - 0.5) * world.width
     world_y = (normalized_y - 0.5) * world.height
