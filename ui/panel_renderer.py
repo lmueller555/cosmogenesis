@@ -14,6 +14,7 @@ from game.research import ResearchAvailability, ResearchNode
 from game.world import World
 from game.visibility import VisibilityGrid
 from game.ship_registry import ShipDefinition
+from game.facility_registry import FacilityDefinition, all_facility_definitions
 from .layout import UILayout
 
 
@@ -30,6 +31,13 @@ class ResearchButton:
 @dataclass
 class ProductionButton:
     ship_name: str
+    rect: pygame.Rect
+    enabled: bool = True
+
+
+@dataclass
+class FacilityButton:
+    facility_type: str
     rect: pygame.Rect
     enabled: bool = True
 
@@ -64,6 +72,7 @@ class UIPanelRenderer:
         }
         self._research_buttons: List[ResearchButton] = []
         self._production_buttons: List[ProductionButton] = []
+        self._facility_buttons: List[FacilityButton] = []
 
     def draw(self, world: World, camera: Camera3D, layout: UILayout) -> None:
         width, height = layout.window_size
@@ -102,6 +111,14 @@ class UIPanelRenderer:
                 if world.try_start_research(button.node_id):
                     return True
         base = world.selected_base
+        for button in self._facility_buttons:
+            if not button.rect.collidepoint(pos):
+                continue
+            if base is None:
+                return True
+            if button.enabled and world.queue_facility(base, button.facility_type):
+                return True
+            return True
         for button in self._production_buttons:
             if not button.rect.collidepoint(pos):
                 continue
@@ -230,6 +247,7 @@ class UIPanelRenderer:
         cursor_y = rect.top + padding
         self._research_buttons.clear()
         self._production_buttons.clear()
+        self._facility_buttons.clear()
 
         selection_kind = self._context_selection_kind(world)
         if selection_kind == "base":
@@ -249,6 +267,7 @@ class UIPanelRenderer:
     def _draw_base_context(
         self, world: World, rect: pygame.Rect, cursor_x: float, cursor_y: float
     ) -> None:
+        base = world.selected_base
         self._draw_text(cursor_x, cursor_y, "Astral Citadel Operations", self._context_text)
         cursor_y += 26
         income_suffix = ""
@@ -264,8 +283,10 @@ class UIPanelRenderer:
 
         cursor_y = self._draw_research_section(world, rect, cursor_x, cursor_y)
         cursor_y += 18
+        cursor_y = self._draw_facility_section(world, rect, cursor_x, cursor_y, base)
+        cursor_y += 18
         self._draw_construction_section(
-            world, rect, cursor_x, cursor_y, world.selected_base
+            world, rect, cursor_x, cursor_y, base
         )
 
     def _draw_ship_context(self, world: World, cursor_x: float, cursor_y: float) -> None:
@@ -381,6 +402,74 @@ class UIPanelRenderer:
                     )
                 )
                 cursor_y += height + 8
+
+        return cursor_y
+
+    def _draw_facility_section(
+        self,
+        world: World,
+        rect: pygame.Rect,
+        cursor_x: float,
+        cursor_y: float,
+        base: Optional[Base],
+    ) -> float:
+        self._draw_text(cursor_x, cursor_y, "Facilities & Modules", self._context_text)
+        cursor_y += 24
+        if base is None:
+            self._draw_text(cursor_x, cursor_y, "No operational base.", self._muted_text)
+            cursor_y += 22
+            return cursor_y
+
+        jobs = world.facility_jobs_for_base(base)
+        if jobs:
+            for job in jobs:
+                total_time = max(0.1, job.definition.build_time)
+                progress = 1.0 - max(0.0, job.remaining_time) / total_time
+                self._draw_text(
+                    cursor_x,
+                    cursor_y,
+                    f"Building: {job.definition.name} ({progress * 100:4.0f}% complete)",
+                    self._text_color,
+                )
+                cursor_y += 20
+                self._draw_text(
+                    cursor_x,
+                    cursor_y,
+                    f"{max(0.0, job.remaining_time):0.1f}s remaining",
+                    self._muted_text,
+                )
+                cursor_y += 24
+        else:
+            self._draw_text(
+                cursor_x,
+                cursor_y,
+                "No facilities under construction.",
+                self._muted_text,
+            )
+            cursor_y += 22
+
+        definitions = sorted(
+            all_facility_definitions(), key=lambda definition: definition.name
+        )
+        for definition in definitions:
+            height = 88
+            button_rect = pygame.Rect(rect.left + 8, int(cursor_y), rect.width - 16, height)
+            enabled, status_line = world.facility_construction_status(base, definition)
+            if world.has_facility(base, definition.facility_type):
+                enabled = False
+                status_line = "Operational"
+            elif world.facility_under_construction(base, definition.facility_type):
+                enabled = False
+                status_line = "Under construction"
+            self._draw_facility_button(button_rect, definition, enabled, status_line)
+            self._facility_buttons.append(
+                FacilityButton(
+                    facility_type=definition.facility_type,
+                    rect=button_rect,
+                    enabled=enabled,
+                )
+            )
+            cursor_y += height + 8
 
         return cursor_y
 
@@ -781,6 +870,42 @@ class UIPanelRenderer:
         if status_line:
             status_color = self._muted_text if not enabled else self._context_text
             self._draw_text(text_x, text_y + 52, status_line, status_color)
+
+    def _draw_facility_button(
+        self,
+        rect: pygame.Rect,
+        definition: FacilityDefinition,
+        enabled: bool,
+        status_line: Optional[str],
+    ) -> None:
+        if enabled:
+            bg = (0.13, 0.18, 0.28, 0.95)
+            text_color = self._text_color
+        else:
+            bg = (0.08, 0.09, 0.13, 0.85)
+            text_color = self._muted_text
+        border = (0.32, 0.4, 0.52, 1.0)
+        self._draw_rect(rect, bg)
+        self._draw_rect_outline(rect, border)
+        text_x = rect.left + 10
+        text_y = rect.top + 12
+        self._draw_text(text_x, text_y, definition.name, text_color)
+        self._draw_text(text_x, text_y + 18, definition.description, self._muted_text)
+        self._draw_text(
+            text_x,
+            text_y + 38,
+            f"Cost {definition.resource_cost:,} | {definition.build_time:.0f}s",
+            self._context_text,
+        )
+        self._draw_text(
+            text_x,
+            text_y + 56,
+            f"HP {definition.health:,}  Shields {definition.shields:,}",
+            self._context_text,
+        )
+        if status_line:
+            status_color = self._muted_text if not enabled else self._context_text
+            self._draw_text(text_x, text_y + 74, status_line, status_color)
 
     @staticmethod
     def _ship_class_order(ship_class: str) -> int:
