@@ -8,6 +8,7 @@ from OpenGL import GL as gl
 import numpy as np
 
 from game.camera import Camera3D
+from game.entities import Facility
 from game.world import World
 from ui.layout import UILayout
 from .opengl_context import LINE_COLOR
@@ -17,10 +18,14 @@ from .wireframe_primitives import (
     create_planetoid_mesh,
     create_asteroid_mesh,
     create_abyssal_crown_mesh,
+    create_defense_grid_node_mesh,
+    create_fleet_forge_mesh,
     create_daggerwing_mesh,
     create_iron_halberd_mesh,
     create_lance_of_dawn_mesh,
     create_oblivion_spire_mesh,
+    create_research_nexus_mesh,
+    create_shipwright_foundry_mesh,
     create_spearling_mesh,
     create_star_fortress_mesh,
     create_sunlance_mesh,
@@ -51,6 +56,24 @@ class WireframeRenderer:
             "Titan's Ward": create_titans_ward_mesh(),
             "Abyssal Crown": create_abyssal_crown_mesh(),
             "Oblivion Spire": create_oblivion_spire_mesh(),
+        }
+        self.facility_meshes: Dict[str, WireframeMesh] = {
+            "ShipwrightFoundry": create_shipwright_foundry_mesh(),
+            "FleetForge": create_fleet_forge_mesh(),
+            "ResearchNexus": create_research_nexus_mesh(),
+            "DefenseGridNode": create_defense_grid_node_mesh(),
+        }
+        self._facility_offsets: Dict[str, Tuple[float, float]] = {
+            "ShipwrightFoundry": (-150.0, -70.0),
+            "FleetForge": (150.0, -70.0),
+            "ResearchNexus": (-150.0, 80.0),
+            "DefenseGridNode": (150.0, 80.0),
+        }
+        self._facility_scales: Dict[str, float] = {
+            "ShipwrightFoundry": 0.85,
+            "FleetForge": 0.9,
+            "ResearchNexus": 0.75,
+            "DefenseGridNode": 0.78,
         }
         self.selection_color: Tuple[float, float, float, float] = (1.0, 0.82, 0.26, 1.0)
         self.enemy_color: Tuple[float, float, float, float] = (1.0, 0.35, 0.35, 1.0)
@@ -86,6 +109,17 @@ class WireframeRenderer:
 
         for base in world.bases:
             self._draw_mesh(self.astral_citadel_mesh, base.position, 1.0)
+
+        for facility in world.facilities:
+            if not self._should_draw_facility(world, facility):
+                continue
+            mesh = self.facility_meshes.get(facility.facility_type)
+            if mesh is None:
+                continue
+            position = self._facility_render_position(facility)
+            scale = self._facility_scale(facility.facility_type)
+            color = self._facility_color(world, facility)
+            self._draw_mesh(mesh, position, scale, color=color, elevation=8.0)
 
         for ship in world.ships:
             if ship.faction != "player" and not world.visibility.is_visual(ship.position):
@@ -158,6 +192,38 @@ class WireframeRenderer:
         if ship_class == "Capital":
             return 1.6
         return 1.0
+
+    def _facility_scale(self, facility_type: str) -> float:
+        return self._facility_scales.get(facility_type, 0.8)
+
+    def _facility_render_position(self, facility: Facility) -> Tuple[float, float]:
+        base = facility.host_base
+        if base is not None:
+            dx = facility.position[0] - base.position[0]
+            dy = facility.position[1] - base.position[1]
+            if abs(dx) < 1e-3 and abs(dy) < 1e-3:
+                offset = self._facility_offsets.get(facility.facility_type, (0.0, 0.0))
+                return (base.position[0] + offset[0], base.position[1] + offset[1])
+        return facility.position
+
+    def _facility_color(self, world: World, facility: Facility) -> Tuple[float, float, float, float]:
+        base = facility.host_base
+        faction = base.faction if base is not None else world.player_faction
+        if faction != world.player_faction:
+            return self.enemy_color
+        if not facility.online:
+            return (0.45, 0.5, 0.62, 1.0)
+        return LINE_COLOR
+
+    def _should_draw_facility(self, world: World, facility: Facility) -> bool:
+        base = facility.host_base
+        if base is not None and base.faction == world.player_faction:
+            return True
+        grid = getattr(world, "visibility", None)
+        if grid is None:
+            return True
+        position = self._facility_render_position(facility)
+        return grid.is_visual(position)
 
     def _draw_screen_rect(
         self,
