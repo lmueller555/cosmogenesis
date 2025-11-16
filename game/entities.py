@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from .ship_registry import ShipDefinition
+from .production import ProductionQueue, ProductionJob
 
 Vec2 = Tuple[float, float]
 
@@ -40,7 +41,20 @@ class Base(Entity):
     radar_range: float = 2000.0
     firing_range: float = 1800.0
     weapon_damage: float = 250.0
-    # TODO: Attach production queues, upgrade modules, and research integration when systems are implemented.
+    production: ProductionQueue = field(default_factory=ProductionQueue)
+    spawn_serial: int = field(default=0, init=False, repr=False)
+
+    # TODO: Attach upgrade modules and research integration when systems are implemented.
+
+    def queue_ship(self, ship_name: str) -> ProductionJob:
+        """Convenience helper so higher-level systems can add ship orders."""
+
+        return self.production.queue_ship(ship_name)
+
+    def update(self, dt: float) -> List[ShipDefinition]:
+        """Advance production timers and return finished ship hulls."""
+
+        return self.production.update(dt)
 
 
 @dataclass
