@@ -12,9 +12,11 @@ from game.selection import (
     select_ships_in_rect,
     select_single_ship,
 )
-from game.world import create_initial_world
+from game.world import create_initial_world, World
 from rendering.draw_system import WireframeRenderer
 from rendering.opengl_context import initialize_gl, resize_viewport
+from ui.layout import UILayout
+from ui.panel_renderer import UIPanelRenderer
 
 
 def handle_camera_input(camera: Camera3D, dt: float) -> None:
@@ -36,6 +38,28 @@ def handle_camera_input(camera: Camera3D, dt: float) -> None:
         camera.move((direction[0], direction[1]), dt)
 
 
+Vec2 = tuple[float, float]
+
+
+def _clamp_to_world(world: World, position: Vec2) -> Vec2:
+    half_w = world.width * 0.5
+    half_h = world.height * 0.5
+    x = max(-half_w, min(half_w, position[0]))
+    y = max(-half_h, min(half_h, position[1]))
+    return (x, y)
+
+
+def _minimap_to_world(world: World, layout: UILayout, point: Vec2) -> Vec2:
+    rect = layout.minimap_rect
+    if rect.width <= 0 or rect.height <= 0:
+        return (0.0, 0.0)
+    normalized_x = (point[0] - rect.left) / rect.width
+    normalized_y = (rect.bottom - point[1]) / rect.height
+    world_x = (normalized_x - 0.5) * world.width
+    world_y = (normalized_y - 0.5) * world.height
+    return _clamp_to_world(world, (world_x, world_y))
+
+
 def run() -> None:
     pygame.init()
     pygame.display.set_caption("Cosmogenesis Prototype")
@@ -43,12 +67,18 @@ def run() -> None:
         (0, 0), pygame.OPENGL | pygame.DOUBLEBUF | pygame.FULLSCREEN
     )
     window_size = pygame.display.get_surface().get_size()
+    layout = UILayout(window_size)
 
     initialize_gl(window_size)
 
     world = create_initial_world()
-    camera = Camera3D(position=(0.0, 650.0, -650.0), target=(0.0, 0.0, 0.0), viewport_size=window_size)
+    camera = Camera3D(
+        position=(0.0, 650.0, -650.0),
+        target=(0.0, 0.0, 0.0),
+        viewport_size=layout.gameplay_rect.size,
+    )
     renderer = WireframeRenderer()
+    ui_renderer = UIPanelRenderer()
     selection_drag = SelectionDragState()
 
     clock = pygame.time.Clock()
@@ -63,18 +93,28 @@ def run() -> None:
             elif event.type == pygame.VIDEORESIZE:
                 pygame.display.set_mode(event.size, pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE)
                 resize_viewport(event.size)
-                camera.update_viewport(event.size)
+                window_size = event.size
+                layout.update(window_size)
+                camera.update_viewport(layout.gameplay_rect.size)
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:
-                    selection_drag.begin(event.pos)
-                elif event.button == 3:
-                    world_pos = camera.screen_to_world(event.pos)
-                    world.issue_move_order(world_pos)
+                if layout.is_in_gameplay(event.pos):
+                    clamped = layout.clamp_to_gameplay(event.pos)
+                    if event.button == 1:
+                        selection_drag.begin(clamped)
+                    elif event.button == 3:
+                        world_pos = camera.screen_to_world(clamped)
+                        world.issue_move_order(_clamp_to_world(world, world_pos))
+                elif layout.is_in_minimap(event.pos):
+                    world_target = _minimap_to_world(world, layout, event.pos)
+                    if event.button == 1:
+                        camera.recenter_on(world_target)
+                    elif event.button == 3:
+                        world.issue_move_order(world_target)
             elif event.type == pygame.MOUSEWHEEL:
                 camera.zoom(event.y)
             elif event.type == pygame.MOUSEMOTION:
                 if selection_drag.dragging:
-                    selection_drag.update(event.pos)
+                    selection_drag.update(layout.clamp_to_gameplay(event.pos))
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 if not selection_drag.dragging:
                     continue
@@ -87,16 +127,19 @@ def run() -> None:
                     end_world = camera.screen_to_world(end_screen)
                     select_ships_in_rect(world, start_world, end_world, additive=additive)
                 else:
-                    world_pos = camera.screen_to_world(event.pos)
-                    ship = pick_ship(world, world_pos)
-                    select_single_ship(world, ship, additive=additive)
+                    if layout.is_in_gameplay(event.pos):
+                        clamped = layout.clamp_to_gameplay(event.pos)
+                        world_pos = camera.screen_to_world(clamped)
+                        ship = pick_ship(world, world_pos)
+                        select_single_ship(world, ship, additive=additive)
 
         handle_camera_input(camera, dt)
         world.update(dt)
         selection_box = None
         if selection_drag.dragging and selection_drag.has_significant_drag():
             selection_box = selection_drag.corners()
-        renderer.draw_world(world, camera, selection_box=selection_box)
+        renderer.draw_world(world, camera, layout, selection_box=selection_box)
+        ui_renderer.draw(world, camera, layout)
         pygame.display.flip()
 
     pygame.quit()

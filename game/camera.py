@@ -80,6 +80,22 @@ class Camera3D:
             self.target[2] + movement[2],
         )
 
+    def recenter_on(self, world_pos: Vec2) -> None:
+        """Move the camera to focus on ``world_pos`` without changing altitude."""
+
+        offset = (
+            self.position[0] - self.target[0],
+            self.position[1] - self.target[1],
+            self.position[2] - self.target[2],
+        )
+        new_target = (world_pos[0], self.target[1], world_pos[1])
+        self.target = new_target
+        self.position = (
+            new_target[0] + offset[0],
+            new_target[1] + offset[1],
+            new_target[2] + offset[2],
+        )
+
     def zoom(self, scroll_delta: float) -> None:
         """Move the camera closer/farther from the target while preserving angle."""
 
