@@ -65,7 +65,7 @@ class EnemyAIController:
         target_position = base.position
         for ship in self._enemy_ships():
             if ship.move_target is None:
-                ship.set_move_target(target_position)
+                ship.set_move_target(target_position, behavior="attack")
 
     def _try_spawn_reinforcement(self) -> None:
         if len(self._enemy_ships()) >= self._max_active:
@@ -80,7 +80,7 @@ class EnemyAIController:
         ship = Ship(position=spawn_pos, definition=definition, faction="enemy")
         base = self._world.player_primary_base()
         if base is not None:
-            ship.set_move_target(base.position)
+            ship.set_move_target(base.position, behavior="attack")
         self._world.ships.append(ship)
 
     def _enemy_ships(self) -> List[Ship]:
