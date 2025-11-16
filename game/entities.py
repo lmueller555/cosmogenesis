@@ -1,8 +1,9 @@
 """Entity definitions for Cosmogenesis."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
-from typing import Tuple
+from typing import Optional, Tuple
 
 from .ship_registry import ShipDefinition
 
@@ -50,6 +51,8 @@ class Ship(Entity):
     current_health: float = field(init=False)
     current_shields: float = field(init=False)
     current_energy: float = field(init=False)
+    move_target: Optional[Vec2] = None
+    arrival_threshold: float = 6.0
 
     def __post_init__(self) -> None:
         self.current_health = float(self.definition.health)
@@ -76,4 +79,40 @@ class Ship(Entity):
     def firing_range(self) -> float:
         return self.definition.firing_range
 
-    # TODO: Movement, combat systems, AI hooks, etc.
+    def set_move_target(self, target: Optional[Vec2]) -> None:
+        """Assign a new destination for this ship (``None`` clears orders)."""
+
+        self.move_target = target
+
+    def update(self, dt: float) -> None:
+        """Advance ship state – currently only simple point-to-point movement."""
+
+        if self.move_target is None:
+            return
+
+        dx = self.move_target[0] - self.position[0]
+        dy = self.move_target[1] - self.position[1]
+        distance = math.hypot(dx, dy)
+        if distance <= self.arrival_threshold or self.definition.flight_speed <= 0.0:
+            # Snap to target to avoid jitter and clear the order.
+            self.position = self.move_target
+            self.move_target = None
+            return
+
+        max_step = self.definition.flight_speed * dt
+        if max_step <= 0.0:
+            return
+
+        if distance <= max_step:
+            self.position = self.move_target
+            self.move_target = None
+            return
+
+        direction_x = dx / distance
+        direction_y = dy / distance
+        self.position = (
+            self.position[0] + direction_x * max_step,
+            self.position[1] + direction_y * max_step,
+        )
+
+    # TODO: Combat systems, AI hooks, stance tracking, etc.

@@ -58,12 +58,16 @@ def run() -> None:
                 pygame.display.set_mode(event.size, pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE)
                 resize_viewport(event.size)
                 camera.update_viewport(event.size)
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            elif event.type == pygame.MOUSEBUTTONDOWN:
                 world_pos = camera.screen_to_world(event.pos)
-                ship = pick_ship(world, world_pos)
-                select_single_ship(world, ship)
+                if event.button == 1:
+                    ship = pick_ship(world, world_pos)
+                    select_single_ship(world, ship)
+                elif event.button == 3:
+                    world.issue_move_order(world_pos)
 
         handle_camera_input(camera, dt)
+        world.update(dt)
         renderer.draw_world(world, camera)
         pygame.display.flip()
 

@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Tuple
 
 from .entities import Base, Planetoid, Ship
 from .ship_registry import get_ship_definition
+
+Vec2 = Tuple[float, float]
 
 
 @dataclass
@@ -18,6 +20,18 @@ class World:
     selected_ships: List[Ship] = field(default_factory=list)
 
     # TODO: Track fog-of-war state, radar reveals, and additional entity types.
+
+    def update(self, dt: float) -> None:
+        """Advance simulation forward by ``dt`` seconds."""
+
+        for ship in self.ships:
+            ship.update(dt)
+
+    def issue_move_order(self, destination: Vec2) -> None:
+        """Send every selected ship toward ``destination``."""
+
+        for ship in self.selected_ships:
+            ship.set_move_target(destination)
 
 
 def create_initial_world() -> World:
