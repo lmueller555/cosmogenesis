@@ -38,6 +38,18 @@ class ProductionQueue:
             self._start_next_job()
         return job
 
+    def cancel_last_job(self) -> Optional[ShipDefinition]:
+        """Remove the most recently queued ship and return its definition."""
+
+        if self._pending:
+            job = self._pending.pop()
+            return job.ship_definition
+        if self._active is not None:
+            job = self._active
+            self._active = None
+            return job.ship_definition
+        return None
+
     def job_count(self) -> int:
         """Return the total number of active + queued jobs."""
 

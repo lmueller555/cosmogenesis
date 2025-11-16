@@ -78,6 +78,7 @@ class Base(Entity):
     firing_range: float = 1800.0
     weapon_damage: float = 250.0
     production: ProductionQueue = field(default_factory=ProductionQueue)
+    waypoint: Optional[Vec2] = None
     spawn_serial: int = field(default=0, init=False, repr=False)
     faction: str = "player"
     max_health: float = field(init=False)
