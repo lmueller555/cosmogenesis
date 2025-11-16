@@ -75,6 +75,9 @@ class Base(Entity):
     current_health: float = field(init=False)
     current_shields: float = field(init=False)
     armor_value: float = field(init=False)
+    max_energy: float = field(init=False)
+    current_energy: float = field(init=False)
+    energy_regen_value: float = field(init=False)
     visual_range_value: float = field(init=False)
     radar_range_value: float = field(init=False)
     firing_range_value: float = field(init=False)
@@ -88,6 +91,9 @@ class Base(Entity):
         self.current_health = self.max_health
         self.current_shields = self.max_shields
         self.armor_value = float(self.armor)
+        self.max_energy = float(self.energy)
+        self.current_energy = self.max_energy
+        self.energy_regen_value = float(self.energy_regen)
         self.visual_range_value = float(self.visual_range)
         self.radar_range_value = float(self.radar_range)
         self.firing_range_value = float(self.firing_range)
@@ -128,6 +134,13 @@ class Base(Entity):
         self.firing_range_value = float(self.firing_range) * mult("firing_range")
         self.visual_range_value = float(self.visual_range) * mult("visual_range")
         self.radar_range_value = float(self.radar_range) * mult("radar_range")
+        prev_max_energy = self.max_energy
+        new_max_energy = float(self.energy) * mult("energy")
+        self.max_energy = new_max_energy
+        self.current_energy = Ship._scale_current_value(
+            self.current_energy, prev_max_energy, new_max_energy
+        )
+        self.energy_regen_value = float(self.energy_regen) * mult("energy_regen")
 
 
 @dataclass

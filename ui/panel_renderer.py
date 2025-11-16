@@ -78,7 +78,7 @@ class UIPanelRenderer:
         gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
 
         self._draw_panel_background(layout)
-        self._draw_selection_summary(world.selected_ships, layout.selection_rect)
+        self._draw_selection_summary(world, layout.selection_rect)
         self._draw_context_panel(world, layout.context_rect)
         self._draw_minimap(world, camera, layout.minimap_rect)
 
@@ -93,13 +93,15 @@ class UIPanelRenderer:
 
         if not layout.context_rect.collidepoint(pos):
             return False
+        if world.selected_base is None:
+            return True
         for button in self._research_buttons:
             if not button.enabled:
                 continue
             if button.rect.collidepoint(pos):
                 if world.try_start_research(button.node_id):
                     return True
-        base = world.player_primary_base()
+        base = world.selected_base
         for button in self._production_buttons:
             if not button.rect.collidepoint(pos):
                 continue
@@ -147,8 +149,12 @@ class UIPanelRenderer:
     # ------------------------------------------------------------------
     # Selection summary
     # ------------------------------------------------------------------
-    def _draw_selection_summary(self, selection: Iterable[Ship], rect: pygame.Rect) -> None:
-        ships = list(selection)
+    def _draw_selection_summary(self, world: World, rect: pygame.Rect) -> None:
+        if world.selected_base is not None:
+            self._draw_base_summary(world.selected_base, rect)
+            return
+
+        ships = list(world.selected_ships)
         if not ships:
             self._draw_text_block(
                 rect.left + 16,
@@ -173,6 +179,21 @@ class UIPanelRenderer:
         ]
         if len(ships) > 1:
             lines.insert(1, f"Group size: {len(ships)} ships")
+        self._draw_text_block(rect.left + 16, rect.top + 24, lines)
+
+    def _draw_base_summary(self, base: Base, rect: pygame.Rect) -> None:
+        lines = [
+            f"{base.name} (Base)",
+            f"HP: {base.current_health:.0f}/{base.max_health:.0f}",
+            f"Armor: {base.armor_value:.0f}",
+            f"Shields: {base.current_shields:.0f}/{base.max_shields:.0f}",
+            f"Energy: {base.current_energy:.0f}/{base.max_energy:.0f} (+{base.energy_regen_value:.1f}/s)",
+            f"Weapon Damage: {base.weapon_damage_value:.0f}",
+            f"Flight Speed: {base.flight_speed:.0f}",
+            f"Visual Range: {base.visual_range_value:.0f}",
+            f"Radar Range: {base.radar_range_value:.0f}",
+            f"Firing Range: {base.firing_range_value:.0f}",
+        ]
         self._draw_text_block(rect.left + 16, rect.top + 24, lines)
 
     def _draw_text_block(
@@ -210,7 +231,25 @@ class UIPanelRenderer:
         self._research_buttons.clear()
         self._production_buttons.clear()
 
-        self._draw_text(cursor_x, cursor_y, "Research Console", self._context_text)
+        selection_kind = self._context_selection_kind(world)
+        if selection_kind == "base":
+            self._draw_base_context(world, rect, cursor_x, cursor_y)
+        elif selection_kind == "ship":
+            self._draw_ship_context(world, cursor_x, cursor_y)
+        else:
+            self._draw_no_selection_context(cursor_x, cursor_y)
+
+    def _context_selection_kind(self, world: World) -> str:
+        if world.selected_base is not None:
+            return "base"
+        if world.selected_ships:
+            return "ship"
+        return "none"
+
+    def _draw_base_context(
+        self, world: World, rect: pygame.Rect, cursor_x: float, cursor_y: float
+    ) -> None:
+        self._draw_text(cursor_x, cursor_y, "Astral Citadel Operations", self._context_text)
         cursor_y += 26
         income_suffix = ""
         if world.resource_income_rate > 0.0:
@@ -225,7 +264,47 @@ class UIPanelRenderer:
 
         cursor_y = self._draw_research_section(world, rect, cursor_x, cursor_y)
         cursor_y += 18
-        self._draw_construction_section(world, rect, cursor_x, cursor_y)
+        self._draw_construction_section(
+            world, rect, cursor_x, cursor_y, world.selected_base
+        )
+
+    def _draw_ship_context(self, world: World, cursor_x: float, cursor_y: float) -> None:
+        self._draw_text(cursor_x, cursor_y, "Ship Abilities", self._context_text)
+        cursor_y += 24
+        ship_count = len(world.selected_ships)
+        if ship_count > 1:
+            self._draw_text(cursor_x, cursor_y, f"Group size: {ship_count}", self._muted_text)
+            cursor_y += 22
+        self._draw_text(
+            cursor_x,
+            cursor_y,
+            "No active abilities implemented yet.",
+            self._muted_text,
+        )
+        cursor_y += 22
+        self._draw_text(
+            cursor_x,
+            cursor_y,
+            "TODO: Wire ship abilities/stances per ship_guidance.",
+            self._muted_text,
+        )
+
+    def _draw_no_selection_context(self, cursor_x: float, cursor_y: float) -> None:
+        self._draw_text(cursor_x, cursor_y, "Context Actions", self._context_text)
+        cursor_y += 24
+        self._draw_text(
+            cursor_x,
+            cursor_y,
+            "Select the Astral Citadel to manage research and production.",
+            self._muted_text,
+        )
+        cursor_y += 22
+        self._draw_text(
+            cursor_x,
+            cursor_y,
+            "Select ships to access tactical actions.",
+            self._muted_text,
+        )
 
     def _draw_research_section(
         self, world: World, rect: pygame.Rect, cursor_x: float, cursor_y: float
@@ -306,12 +385,16 @@ class UIPanelRenderer:
         return cursor_y
 
     def _draw_construction_section(
-        self, world: World, rect: pygame.Rect, cursor_x: float, cursor_y: float
+        self,
+        world: World,
+        rect: pygame.Rect,
+        cursor_x: float,
+        cursor_y: float,
+        base: Optional[Base],
     ) -> None:
         self._draw_text(cursor_x, cursor_y, "Ship Construction", self._context_text)
         cursor_y += 24
 
-        base = world.player_primary_base()
         if base is None:
             self._draw_text(cursor_x, cursor_y, "No operational base.", self._muted_text)
             cursor_y += 22
