@@ -5,7 +5,7 @@ import math
 
 import pygame
 
-from game.camera import Camera2D
+from game.camera import Camera3D
 from game.selection import (
     SelectionDragState,
     pick_ship,
@@ -16,7 +16,8 @@ from game.world import create_initial_world
 from rendering.draw_system import WireframeRenderer
 from rendering.opengl_context import initialize_gl, resize_viewport
 
-def handle_camera_input(camera: Camera2D, dt: float) -> None:
+
+def handle_camera_input(camera: Camera3D, dt: float) -> None:
     keys = pygame.key.get_pressed()
     direction = [0.0, 0.0]
     if keys[pygame.K_w] or keys[pygame.K_UP]:
@@ -46,7 +47,7 @@ def run() -> None:
     initialize_gl(window_size)
 
     world = create_initial_world()
-    camera = Camera2D(position=(0.0, 0.0), viewport_size=window_size)
+    camera = Camera3D(position=(0.0, 650.0, -650.0), target=(0.0, 0.0, 0.0), viewport_size=window_size)
     renderer = WireframeRenderer()
     selection_drag = SelectionDragState()
 
@@ -69,6 +70,8 @@ def run() -> None:
                 elif event.button == 3:
                     world_pos = camera.screen_to_world(event.pos)
                     world.issue_move_order(world_pos)
+            elif event.type == pygame.MOUSEWHEEL:
+                camera.zoom(event.y)
             elif event.type == pygame.MOUSEMOTION:
                 if selection_drag.dragging:
                     selection_drag.update(event.pos)
