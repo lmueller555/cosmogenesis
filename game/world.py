@@ -12,6 +12,11 @@ from .ship_registry import (
     all_ship_definitions,
     get_ship_definition,
 )
+from .facility_registry import (
+    FacilityDefinition,
+    all_facility_definitions,
+    get_facility_definition,
+)
 from .research import ResearchAvailability, ResearchManager, ResearchNode
 from .visibility import VisibilityGrid
 
@@ -46,6 +51,7 @@ class World:
     bases: List[Base] = field(default_factory=list)
     ships: List[Ship] = field(default_factory=list)
     facilities: List[Facility] = field(default_factory=list)
+    facility_jobs: List[FacilityConstructionJob] = field(default_factory=list)
     selected_ships: List[Ship] = field(default_factory=list)
     selected_base: Base | None = None
     resources: float = 20_000.0
@@ -81,6 +87,7 @@ class World:
             for ship_definition in completed:
                 self._spawn_ship_from_base(base, ship_definition)
 
+        self._update_facility_construction(dt)
         self._update_combat(dt)
         completed_research = self.research_manager.update(dt)
         if completed_research is not None:
@@ -190,6 +197,12 @@ class World:
             if self.research_manager.is_ship_unlocked(definition.name):
                 unlocked.append(definition)
         return unlocked
+
+    def facilities_for_base(self, base: Base) -> List[Facility]:
+        return [facility for facility in self.facilities if facility.host_base == base]
+
+    def facility_jobs_for_base(self, base: Base) -> List[FacilityConstructionJob]:
+        return [job for job in self.facility_jobs if job.base == base]
 
     def ship_production_status(
         self, base: Optional[Base], definition: ShipDefinition
@@ -318,6 +331,55 @@ class World:
     def _required_facility_for_ship(self, definition: ShipDefinition) -> Optional[str]:
         return SHIP_CLASS_PRODUCTION_FACILITY.get(definition.ship_class)
 
+    def has_facility(self, base: Base, facility_type: str) -> bool:
+        return any(
+            facility.host_base == base and facility.facility_type == facility_type
+            for facility in self.facilities
+        )
+
+    def facility_under_construction(self, base: Base, facility_type: str) -> bool:
+        return any(
+            job.base == base and job.definition.facility_type == facility_type
+            for job in self.facility_jobs
+        )
+
+    def facility_construction_status(
+        self, base: Optional[Base], definition: FacilityDefinition
+    ) -> Tuple[bool, Optional[str]]:
+        if base is None or base not in self.bases or base.faction != self.player_faction:
+            return False, "No operational base"
+        if self.has_facility(base, definition.facility_type):
+            return False, "Already built"
+        if self.facility_under_construction(base, definition.facility_type):
+            return False, "Under construction"
+        if self.resources < definition.resource_cost:
+            shortfall = int(max(0.0, math.ceil(definition.resource_cost - self.resources)))
+            if shortfall > 0:
+                return False, f"Need {shortfall:,} resources"
+            return False, "Insufficient resources"
+        return True, None
+
+    def queue_facility(self, base: Base, facility_type: str) -> bool:
+        """Start constructing ``facility_type`` if resources allow."""
+
+        if base not in self.bases:
+            return False
+        try:
+            definition = get_facility_definition(facility_type)
+        except KeyError:
+            return False
+        allowed, _ = self.facility_construction_status(base, definition)
+        if not allowed:
+            return False
+        job = FacilityConstructionJob(
+            base=base,
+            definition=definition,
+            remaining_time=definition.build_time,
+        )
+        self.facility_jobs.append(job)
+        self.resources -= definition.resource_cost
+        return True
+
     def _resource_income_per_second(self) -> float:
         """Compute the passive resource income for the current tick."""
 
@@ -367,6 +429,40 @@ class World:
             sources.append((ship.position, ship.visual_range, ship.radar_range))
         return sources
 
+    def _update_facility_construction(self, dt: float) -> None:
+        if not self.facility_jobs:
+            return
+        completed: List[FacilityConstructionJob] = []
+        for job in list(self.facility_jobs):
+            if job.base not in self.bases:
+                self.facility_jobs.remove(job)
+                continue
+            if dt <= 0.0:
+                continue
+            job.remaining_time -= dt
+            if job.remaining_time <= 0.0:
+                completed.append(job)
+        for job in completed:
+            if job in self.facility_jobs:
+                self.facility_jobs.remove(job)
+            base = job.base
+            slot_index = self._next_facility_slot(base)
+            position = self._facility_slot_position(base, slot_index)
+            facility = Facility(position=position, definition=job.definition, host_base=base)
+            self.add_facility(facility)
+
+    def _next_facility_slot(self, base: Base) -> int:
+        return sum(1 for facility in self.facilities if facility.host_base == base)
+
+    def _facility_slot_position(self, base: Base, slot_index: int) -> Vec2:
+        # TODO: Align facility attachment points with art-directed sockets from game_guidance.
+        angle = math.radians((slot_index % 6) * (360.0 / 6.0))
+        radius = 180.0 + 25.0 * (slot_index // 6)
+        return (
+            base.position[0] + math.cos(angle) * radius,
+            base.position[1] + math.sin(angle) * radius,
+        )
+
 
 def create_initial_world() -> World:
     """Create a simple sandbox world with one planetoid and one Astral Citadel."""
@@ -398,16 +494,11 @@ def create_initial_world() -> World:
     world._apply_base_research(base)
 
     # Stub in Shipwright Foundry + Fleet Forge attached to the Astral Citadel.
+    shipwright_def = get_facility_definition("ShipwrightFoundry")
+    fleet_forge_def = get_facility_definition("FleetForge")
     shipwright = Facility(
-        position=base.position,
-        facility_type="ShipwrightFoundry",
-        name="Shipwright Foundry",
-        host_base=base,
-    )
-    fleet_forge = Facility(
-        position=base.position,
-        facility_type="FleetForge",
-        name="Fleet Forge",
+        position=world._facility_slot_position(base, world._next_facility_slot(base)),
+        definition=shipwright_def,
         host_base=base,
     )
     research_nexus = Facility(
@@ -417,6 +508,11 @@ def create_initial_world() -> World:
         host_base=base,
     )
     world.add_facility(shipwright)
+    fleet_forge = Facility(
+        position=world._facility_slot_position(base, world._next_facility_slot(base)),
+        definition=fleet_forge_def,
+        host_base=base,
+    )
     world.add_facility(fleet_forge)
     world.add_facility(research_nexus)
 
@@ -450,3 +546,9 @@ def _spawn_ring_position(center: Vec2, index: int, radius: float = 220.0) -> Vec
         center[0] + math.cos(angle) * radius,
         center[1] + math.sin(angle) * radius,
     )
+@dataclass
+class FacilityConstructionJob:
+    base: Base
+    definition: FacilityDefinition
+    remaining_time: float
+

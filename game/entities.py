@@ -7,6 +7,7 @@ from typing import List, Mapping, Optional, Tuple
 
 from .ship_registry import ShipDefinition
 from .production import ProductionQueue, ProductionJob
+from .facility_registry import FacilityDefinition
 
 Vec2 = Tuple[float, float]
 
@@ -147,15 +148,55 @@ class Base(Entity):
 class Facility(Entity):
     """Represents a constructed facility that gates tech trees."""
 
-    facility_type: str
-    name: str
+    definition: FacilityDefinition
     host_base: Optional[Base] = None
     online: bool = True
+    current_health: float = field(init=False)
+    current_shields: float = field(init=False)
+    max_health: float = field(init=False)
+    max_shields: float = field(init=False)
+    armor_value: float = field(default=0.0, init=False)
+
+    def __post_init__(self) -> None:
+        self.max_health = float(self.definition.health)
+        self.max_shields = float(self.definition.shields)
+        self.current_health = self.max_health
+        self.current_shields = self.max_shields
+        # TODO: Populate armor/energy stats once guidance specifies them per facility.
+
+    @property
+    def facility_type(self) -> str:
+        return self.definition.facility_type
+
+    @property
+    def name(self) -> str:
+        return self.definition.name
 
     def set_online(self, online: bool) -> None:
         """Toggle operational status; ``World`` informs ``ResearchManager``."""
 
         self.online = online
+
+    def apply_damage(self, amount: float) -> bool:
+        """Apply damage to this facility, returning ``True`` if destroyed."""
+
+        if amount <= 0.0:
+            return False
+        if self.current_shields > 0.0:
+            shield_damage = min(amount, self.current_shields)
+            self.current_shields -= shield_damage
+            amount -= shield_damage
+        if amount > 0.0:
+            self.current_health -= amount
+        destroyed = self.current_health <= 0.0
+        if destroyed:
+            self.current_health = 0.0
+            self.current_shields = 0.0
+        return destroyed
+
+    def repair_full(self) -> None:
+        self.current_health = self.max_health
+        self.current_shields = self.max_shields
 
 
 @dataclass
