@@ -11,6 +11,7 @@ from game.camera import Camera3D
 from game.entities import Ship
 from game.research import ResearchNode
 from game.world import World
+from game.ship_registry import ShipDefinition
 from .layout import UILayout
 
 
@@ -20,6 +21,13 @@ Vec2 = Tuple[float, float]
 @dataclass
 class ResearchButton:
     node_id: str
+    rect: pygame.Rect
+    enabled: bool = True
+
+
+@dataclass
+class ProductionButton:
+    ship_name: str
     rect: pygame.Rect
     enabled: bool = True
 
@@ -40,6 +48,7 @@ class UIPanelRenderer:
         self._enemy_color = (1.0, 0.25, 0.25, 1.0)
         self._minimap_bg = (0.02, 0.02, 0.03, 1.0)
         self._research_buttons: List[ResearchButton] = []
+        self._production_buttons: List[ProductionButton] = []
 
     def draw(self, world: World, camera: Camera3D, layout: UILayout) -> None:
         width, height = layout.window_size
@@ -72,6 +81,15 @@ class UIPanelRenderer:
             if button.rect.collidepoint(pos):
                 if world.try_start_research(button.node_id):
                     return True
+        base = world.player_primary_base()
+        for button in self._production_buttons:
+            if not button.rect.collidepoint(pos):
+                continue
+            if base is None:
+                return True
+            if button.enabled and world.queue_ship(base, button.ship_name):
+                return True
+            return True
         return True  # Click in panel but nothing actionable
 
     # ------------------------------------------------------------------
@@ -172,6 +190,7 @@ class UIPanelRenderer:
         cursor_x = rect.left + padding
         cursor_y = rect.top + padding
         self._research_buttons.clear()
+        self._production_buttons.clear()
 
         self._draw_text(cursor_x, cursor_y, "Research Console", self._context_text)
         cursor_y += 26
@@ -183,6 +202,13 @@ class UIPanelRenderer:
         )
         cursor_y += 24
 
+        cursor_y = self._draw_research_section(world, rect, cursor_x, cursor_y)
+        cursor_y += 18
+        self._draw_construction_section(world, rect, cursor_x, cursor_y)
+
+    def _draw_research_section(
+        self, world: World, rect: pygame.Rect, cursor_x: float, cursor_y: float
+    ) -> float:
         active, progress, remaining = self._active_research_status(world)
         if active is None:
             self._draw_text(cursor_x, cursor_y, "No active research", self._muted_text)
@@ -209,7 +235,8 @@ class UIPanelRenderer:
                 "Check facilities, prerequisites, or resources.",
                 self._muted_text,
             )
-            return
+            cursor_y += 32
+            return cursor_y
 
         self._draw_text(cursor_x, cursor_y, "Available Projects", self._context_text)
         cursor_y += 24
@@ -220,6 +247,81 @@ class UIPanelRenderer:
             self._draw_research_button(button_rect, node)
             self._research_buttons.append(ResearchButton(node_id=node.id, rect=button_rect))
             cursor_y += height + 8
+        return cursor_y
+
+    def _draw_construction_section(
+        self, world: World, rect: pygame.Rect, cursor_x: float, cursor_y: float
+    ) -> None:
+        self._draw_text(cursor_x, cursor_y, "Ship Construction", self._context_text)
+        cursor_y += 24
+
+        base = world.player_primary_base()
+        if base is None:
+            self._draw_text(cursor_x, cursor_y, "No operational base.", self._muted_text)
+            cursor_y += 22
+            self._draw_text(cursor_x, cursor_y, "Build a base to produce ships.", self._muted_text)
+            return
+
+        active_job = base.production.active_job
+        if active_job is None:
+            self._draw_text(cursor_x, cursor_y, "Idle shipyards", self._muted_text)
+            cursor_y += 22
+        else:
+            definition = active_job.ship_definition
+            total_time = max(0.1, definition.build_time)
+            progress = 1.0 - (active_job.remaining_time / total_time)
+            self._draw_text(
+                cursor_x,
+                cursor_y,
+                f"Building: {definition.name} ({progress * 100:4.0f}% complete)",
+                self._text_color,
+            )
+            cursor_y += 20
+            self._draw_text(
+                cursor_x,
+                cursor_y,
+                f"{active_job.remaining_time:0.1f}s remaining",
+                self._muted_text,
+            )
+            cursor_y += 24
+
+        queued = list(base.production.queued_jobs)
+        if queued:
+            queue_names = ", ".join(job.ship_definition.name for job in queued[:3])
+            more = len(queued) - 3
+            suffix = f" (+{more} more)" if more > 0 else ""
+            self._draw_text(
+                cursor_x,
+                cursor_y,
+                f"Queue: {queue_names}{suffix}",
+                self._muted_text,
+            )
+            cursor_y += 26
+        else:
+            self._draw_text(cursor_x, cursor_y, "Queue empty", self._muted_text)
+            cursor_y += 22
+
+        ship_defs = sorted(
+            world.unlocked_ship_definitions(),
+            key=lambda definition: (self._ship_class_order(definition.ship_class), definition.resource_cost),
+        )
+        if not ship_defs:
+            self._draw_text(cursor_x, cursor_y, "No hulls unlocked yet.", self._muted_text)
+            return
+
+        self._draw_text(cursor_x, cursor_y, "Available Hulls", self._context_text)
+        cursor_y += 24
+
+        for definition in ship_defs:
+            height = 56
+            button_rect = pygame.Rect(rect.left + 8, int(cursor_y), rect.width - 16, height)
+            affordable = world.resources >= definition.resource_cost
+            enabled = affordable
+            self._draw_ship_button(button_rect, definition, enabled)
+            self._production_buttons.append(
+                ProductionButton(ship_name=definition.name, rect=button_rect, enabled=enabled)
+            )
+            cursor_y += height + 6
 
     def _active_research_status(
         self, world: World
@@ -351,4 +453,37 @@ class UIPanelRenderer:
         if len(text) <= max_chars:
             return text
         return text[: max_chars - 3] + "..."
+
+    def _draw_ship_button(
+        self, rect: pygame.Rect, definition: ShipDefinition, enabled: bool
+    ) -> None:
+        if enabled:
+            bg = (0.12, 0.16, 0.23, 0.95)
+            text_color = self._text_color
+        else:
+            bg = (0.08, 0.08, 0.10, 0.8)
+            text_color = self._muted_text
+        border = (0.28, 0.35, 0.48, 1.0)
+        self._draw_rect(rect, bg)
+        self._draw_rect_outline(rect, border)
+        text_x = rect.left + 10
+        text_y = rect.top + 12
+        self._draw_text(text_x, text_y, f"{definition.name} ({definition.ship_class})", text_color)
+        self._draw_text(
+            text_x,
+            text_y + 20,
+            f"{definition.role}",
+            self._muted_text,
+        )
+        self._draw_text(
+            text_x,
+            text_y + 36,
+            f"Cost {definition.resource_cost:,} | {definition.build_time:.0f}s",
+            self._context_text,
+        )
+
+    @staticmethod
+    def _ship_class_order(ship_class: str) -> int:
+        order = {"Strike": 0, "Escort": 1, "Line": 2, "Capital": 3}
+        return order.get(ship_class, 99)
 
