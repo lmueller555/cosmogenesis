@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Tuple
+from typing import Callable, Iterable, List, Optional, Tuple
 
 import math
 import pygame
@@ -100,7 +100,17 @@ class UIPanelRenderer:
 
         self._draw_panel_background(layout)
         self._draw_selection_summary(world, layout.selection_rect)
-        self._draw_context_panel(world, layout.context_rect)
+
+        clip_rect = self._context_clip_rect(layout)
+        if clip_rect is None:
+            self._draw_context_panel(world, layout.context_rect)
+        else:
+            self._with_scissor(
+                clip_rect,
+                layout.window_size,
+                lambda: self._draw_context_panel(world, layout.context_rect),
+            )
+
         self._draw_minimap(world, camera, layout.minimap_rect)
 
         gl.glDisable(gl.GL_BLEND)
@@ -191,6 +201,44 @@ class UIPanelRenderer:
         gl.glVertex2f(rect.right, rect.bottom)
         gl.glVertex2f(rect.left, rect.bottom)
         gl.glEnd()
+
+    def _with_scissor(
+        self,
+        rect: pygame.Rect,
+        window_size: Tuple[int, int],
+        draw_callable: Callable[[], None],
+    ) -> None:
+        width = int(max(0, rect.width))
+        height = int(max(0, rect.height))
+        if width == 0 or height == 0:
+            return
+
+        window_width, window_height = window_size
+        x = int(max(0, min(rect.left, window_width)))
+        max_width = max(0, window_width - x)
+        width = min(width, max_width)
+
+        scissor_y_top = rect.top + rect.height
+        y = int(max(0, window_height - scissor_y_top))
+        max_height = max(0, window_height - y)
+        height = min(height, max_height)
+
+        gl.glEnable(gl.GL_SCISSOR_TEST)
+        gl.glScissor(x, y, width, height)
+        try:
+            draw_callable()
+        finally:
+            gl.glDisable(gl.GL_SCISSOR_TEST)
+
+    def _context_clip_rect(self, layout: UILayout) -> Optional[pygame.Rect]:
+        context = layout.context_rect
+        minimap = layout.minimap_rect
+        gap = 8
+        available_height = minimap.top - gap - context.top
+        available_height = min(available_height, context.height)
+        if available_height <= 0:
+            return None
+        return pygame.Rect(context.left, context.top, context.width, int(available_height))
 
     # ------------------------------------------------------------------
     # Selection summary
