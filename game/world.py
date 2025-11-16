@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from .entities import Base, Facility, Planetoid, Ship
 from .ship_registry import (
@@ -15,6 +15,25 @@ from .research import ResearchAvailability, ResearchManager, ResearchNode
 from .visibility import VisibilityGrid
 
 Vec2 = Tuple[float, float]
+
+# ---------------------------------------------------------------------------
+# Production facility requirements derived from `ship_guidance`.
+# Strike/Escort hulls are fabricated via Shipwright Foundries; Line/Capital
+# hulls demand a Fleet Forge online.
+# ---------------------------------------------------------------------------
+SHIP_CLASS_PRODUCTION_FACILITY: dict[str, Optional[str]] = {
+    "Strike": "ShipwrightFoundry",
+    "Escort": "ShipwrightFoundry",
+    "Line": "FleetForge",
+    "Capital": "FleetForge",
+}
+
+FACILITY_DISPLAY_NAMES = {
+    "ShipwrightFoundry": "Shipwright Foundry",
+    "FleetForge": "Fleet Forge",
+    "ResearchNexus": "Research Nexus",
+    "DefenseGridNode": "Defense Grid Node",
+}
 
 
 @dataclass
@@ -79,10 +98,8 @@ class World:
         except KeyError:
             return False
 
-        if not self.research_manager.is_ship_unlocked(ship_name):
-            return False
-
-        if self.resources < definition.resource_cost:
+        allowed, _ = self.ship_production_status(base, definition)
+        if not allowed:
             return False
 
         base.queue_ship(ship_name)
@@ -139,6 +156,34 @@ class World:
             if self.research_manager.is_ship_unlocked(definition.name):
                 unlocked.append(definition)
         return unlocked
+
+    def ship_production_status(
+        self, base: Optional[Base], definition: ShipDefinition
+    ) -> Tuple[bool, Optional[str]]:
+        """Return whether ``definition`` can currently be queued at ``base``.
+
+        A short status string is provided for UI messaging when construction is
+        blocked (insufficient facilities, resources, or research)."""
+
+        if base is None or base not in self.bases or base.faction != self.player_faction:
+            return False, "No operational base"
+
+        if not self.research_manager.is_ship_unlocked(definition.name):
+            # TODO: Surface the specific research node name once UI affordance exists.
+            return False, "Research required"
+
+        facility_type = self._required_facility_for_ship(definition)
+        if facility_type is not None and not self._is_facility_online(facility_type):
+            friendly_name = FACILITY_DISPLAY_NAMES.get(facility_type, facility_type)
+            return False, f"{friendly_name} offline"
+
+        if self.resources < definition.resource_cost:
+            shortfall = int(max(0.0, math.ceil(definition.resource_cost - self.resources)))
+            if shortfall > 0:
+                return False, f"Need {shortfall:,} resources"
+            return False, "Insufficient resources"
+
+        return True, None
 
     def try_start_research(self, node_id: str) -> bool:
         """Attempt to start researching ``node_id`` using shared resources."""
@@ -232,6 +277,12 @@ class World:
             facility.online for facility in self.facilities if facility.facility_type == facility_type
         )
         self.research_manager.set_facility_online(facility_type, online)
+
+    def _is_facility_online(self, facility_type: str) -> bool:
+        return self.research_manager.facility_online(facility_type)
+
+    def _required_facility_for_ship(self, definition: ShipDefinition) -> Optional[str]:
+        return SHIP_CLASS_PRODUCTION_FACILITY.get(definition.ship_class)
 
     def _resource_income_per_second(self) -> float:
         """Compute the passive resource income for the current tick."""

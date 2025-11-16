@@ -2,14 +2,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 import math
 import pygame
 from OpenGL import GL as gl
 
 from game.camera import Camera3D
-from game.entities import Ship
+from game.entities import Base, Ship
 from game.research import ResearchAvailability, ResearchNode
 from game.world import World
 from game.ship_registry import ShipDefinition
@@ -360,11 +360,10 @@ class UIPanelRenderer:
         cursor_y += 24
 
         for definition in ship_defs:
-            height = 56
+            height = 72
             button_rect = pygame.Rect(rect.left + 8, int(cursor_y), rect.width - 16, height)
-            affordable = world.resources >= definition.resource_cost
-            enabled = affordable
-            self._draw_ship_button(button_rect, definition, enabled)
+            enabled, status_line = self._ship_button_state(world, base, definition)
+            self._draw_ship_button(button_rect, definition, enabled, status_line=status_line)
             self._production_buttons.append(
                 ProductionButton(ship_name=definition.name, rect=button_rect, enabled=enabled)
             )
@@ -601,8 +600,21 @@ class UIPanelRenderer:
             return text
         return text[: max_chars - 3] + "..."
 
+    def _ship_button_state(
+        self, world: World, base: Optional[Base], definition: ShipDefinition
+    ) -> Tuple[bool, Optional[str]]:
+        if base is None:
+            return False, "No operational base"
+        allowed, reason = world.ship_production_status(base, definition)
+        return allowed, reason
+
     def _draw_ship_button(
-        self, rect: pygame.Rect, definition: ShipDefinition, enabled: bool
+        self,
+        rect: pygame.Rect,
+        definition: ShipDefinition,
+        enabled: bool,
+        *,
+        status_line: Optional[str] = None,
     ) -> None:
         if enabled:
             bg = (0.12, 0.16, 0.23, 0.95)
@@ -628,6 +640,9 @@ class UIPanelRenderer:
             f"Cost {definition.resource_cost:,} | {definition.build_time:.0f}s",
             self._context_text,
         )
+        if status_line:
+            status_color = self._muted_text if not enabled else self._context_text
+            self._draw_text(text_x, text_y + 52, status_line, status_color)
 
     @staticmethod
     def _ship_class_order(ship_class: str) -> int:
