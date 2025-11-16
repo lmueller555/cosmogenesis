@@ -49,6 +49,27 @@ class World:
         for ship in self.selected_ships:
             ship.set_move_target(destination)
 
+    def queue_ship(self, base: Base, ship_name: str) -> bool:
+        """Queue ``ship_name`` at ``base`` if research + resources allow it."""
+
+        if base not in self.bases:
+            return False
+
+        try:
+            definition = get_ship_definition(ship_name)
+        except KeyError:
+            return False
+
+        if not self.research_manager.is_ship_unlocked(ship_name):
+            return False
+
+        if self.resources < definition.resource_cost:
+            return False
+
+        base.queue_ship(ship_name)
+        self.resources -= definition.resource_cost
+        return True
+
     def try_start_research(self, node_id: str) -> bool:
         """Attempt to start researching ``node_id`` using shared resources."""
 
@@ -148,9 +169,8 @@ def create_initial_world() -> World:
         world.ships.append(enemy_ship)
 
     # Queue a few autonomous builds so the production loop is observable.
-    base.queue_ship("Spearling")
-    base.queue_ship("Wisp")
-    base.queue_ship("Sunlance")
+    for ship_name in ["Spearling", "Wisp", "Sunlance"]:
+        world.queue_ship(base, ship_name)
 
     return world
 
