@@ -9,6 +9,7 @@ import numpy as np
 
 from game.camera import Camera3D
 from game.world import World
+from ui.layout import UILayout
 from .opengl_context import LINE_COLOR
 from .wireframe_primitives import (
     WireframeMesh,
@@ -56,10 +57,19 @@ class WireframeRenderer:
         self,
         world: World,
         camera: Camera3D,
+        layout: UILayout,
         *,
         selection_box: Optional[Tuple[Tuple[float, float], Tuple[float, float]]] = None,
     ) -> None:
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+        gameplay_rect = layout.gameplay_rect
+        panel_height = layout.ui_panel_rect.height
+        gl.glViewport(
+            gameplay_rect.left,
+            panel_height,
+            gameplay_rect.width,
+            gameplay_rect.height,
+        )
         self._apply_camera(camera)
 
         for planetoid in world.planetoids:
