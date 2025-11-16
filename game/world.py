@@ -6,7 +6,11 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 from .entities import Base, Planetoid, Ship
-from .ship_registry import ShipDefinition, get_ship_definition
+from .ship_registry import (
+    ShipDefinition,
+    all_ship_definitions,
+    get_ship_definition,
+)
 from .research import ResearchManager, ResearchNode
 
 Vec2 = Tuple[float, float]
@@ -69,6 +73,23 @@ class World:
         base.queue_ship(ship_name)
         self.resources -= definition.resource_cost
         return True
+
+    def player_primary_base(self) -> Optional[Base]:
+        """Return the first operational player-controlled base, if any."""
+
+        for base in self.bases:
+            if base.faction == "player":
+                return base
+        return None
+
+    def unlocked_ship_definitions(self) -> List[ShipDefinition]:
+        """Expose the ship hulls currently unlocked for production."""
+
+        unlocked: List[ShipDefinition] = []
+        for definition in all_ship_definitions():
+            if self.research_manager.is_ship_unlocked(definition.name):
+                unlocked.append(definition)
+        return unlocked
 
     def try_start_research(self, node_id: str) -> bool:
         """Attempt to start researching ``node_id`` using shared resources."""
