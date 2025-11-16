@@ -1,18 +1,27 @@
 """Renderer for the Cosmogenesis bottom HUD panel."""
 from __future__ import annotations
 
-from typing import Iterable, List, Tuple
+from dataclasses import dataclass
+from typing import Iterable, List, Optional, Tuple
 
 import pygame
 from OpenGL import GL as gl
 
 from game.camera import Camera3D
 from game.entities import Ship
+from game.research import ResearchNode
 from game.world import World
 from .layout import UILayout
 
 
 Vec2 = Tuple[float, float]
+
+
+@dataclass
+class ResearchButton:
+    node_id: str
+    rect: pygame.Rect
+    enabled: bool = True
 
 
 class UIPanelRenderer:
@@ -30,6 +39,7 @@ class UIPanelRenderer:
         self._selected_color = (0.2, 0.6, 1.0, 1.0)
         self._enemy_color = (1.0, 0.25, 0.25, 1.0)
         self._minimap_bg = (0.02, 0.02, 0.03, 1.0)
+        self._research_buttons: List[ResearchButton] = []
 
     def draw(self, world: World, camera: Camera3D, layout: UILayout) -> None:
         width, height = layout.window_size
@@ -47,6 +57,22 @@ class UIPanelRenderer:
         self._draw_minimap(world, camera, layout.minimap_rect)
 
         gl.glEnable(gl.GL_DEPTH_TEST)
+
+    def handle_mouse_click(self, world: World, layout: UILayout, pos: Vec2) -> bool:
+        """Process left-clicks in the context panel.
+
+        Returns ``True`` if the event was handled (preventing other UI uses).
+        """
+
+        if not layout.context_rect.collidepoint(pos):
+            return False
+        for button in self._research_buttons:
+            if not button.enabled:
+                continue
+            if button.rect.collidepoint(pos):
+                if world.try_start_research(button.node_id):
+                    return True
+        return True  # Click in panel but nothing actionable
 
     # ------------------------------------------------------------------
     # Background & panel scaffolding
@@ -142,14 +168,78 @@ class UIPanelRenderer:
     # Context panel placeholder
     # ------------------------------------------------------------------
     def _draw_context_panel(self, world: World, rect: pygame.Rect) -> None:
-        lines = [
-            "Context / Actions",
-            "------------------",
-            "TODO: Populate with build",
-            "options, research buttons,",
-            "and abilities per ui_guidance.",
-        ]
-        self._draw_text_block(rect.left + 12, rect.top + 24, lines, color=self._context_text)
+        padding = 12
+        cursor_x = rect.left + padding
+        cursor_y = rect.top + padding
+        self._research_buttons.clear()
+
+        self._draw_text(cursor_x, cursor_y, "Research Console", self._context_text)
+        cursor_y += 26
+        self._draw_text(
+            cursor_x,
+            cursor_y,
+            f"Resources: {world.resources:.0f}",
+            self._muted_text,
+        )
+        cursor_y += 24
+
+        active, progress, remaining = self._active_research_status(world)
+        if active is None:
+            self._draw_text(cursor_x, cursor_y, "No active research", self._muted_text)
+            cursor_y += 26
+        else:
+            self._draw_text(cursor_x, cursor_y, f"Active: {active.name}", self._text_color)
+            cursor_y += 22
+            percent = (progress or 0.0) * 100.0
+            time_left = remaining if remaining is not None else active.research_time
+            progress_line = f"{percent:4.0f}% complete  ({time_left:0.1f}s left)"
+            self._draw_text(cursor_x, cursor_y, progress_line, self._muted_text)
+            cursor_y += 28
+
+        available = sorted(
+            world.available_research(), key=lambda node: (node.tier, node.name)
+        )
+        if not available:
+            idle_message = "Research in progress." if active else "No projects available."
+            self._draw_text(cursor_x, cursor_y, idle_message, self._muted_text)
+            cursor_y += 22
+            self._draw_text(
+                cursor_x,
+                cursor_y,
+                "Check facilities, prerequisites, or resources.",
+                self._muted_text,
+            )
+            return
+
+        self._draw_text(cursor_x, cursor_y, "Available Projects", self._context_text)
+        cursor_y += 24
+
+        for node in available:
+            height = 68
+            button_rect = pygame.Rect(rect.left + 8, int(cursor_y), rect.width - 16, height)
+            self._draw_research_button(button_rect, node)
+            self._research_buttons.append(ResearchButton(node_id=node.id, rect=button_rect))
+            cursor_y += height + 8
+
+    def _active_research_status(
+        self, world: World
+    ) -> Tuple[Optional[ResearchNode], Optional[float], Optional[float]]:
+        """Return (node, progress, remaining_time) for the active project.
+
+        TODO: Replace this private attribute peek with a proper ResearchManager API
+        once one is exposed by the research systems.
+        """
+
+        manager = world.research_manager
+        node = manager.active_node()
+        if node is None:
+            return None, None, None
+        active_state = getattr(manager, "_active", None)
+        if active_state is None or node.research_time <= 0:
+            return node, 1.0, 0.0
+        remaining = max(0.0, getattr(active_state, "remaining_time", node.research_time))
+        progress = max(0.0, min(1.0, 1.0 - (remaining / node.research_time)))
+        return node, progress, remaining
 
     # ------------------------------------------------------------------
     # Mini-map
@@ -229,4 +319,36 @@ class UIPanelRenderer:
         x = rect.left + normalized_x * rect.width
         y = rect.bottom - normalized_y * rect.height
         return (x, y)
+
+    def _draw_research_button(self, rect: pygame.Rect, node: ResearchNode) -> None:
+        bg = (0.10, 0.14, 0.21, 0.95)
+        border = (0.32, 0.45, 0.65, 1.0)
+        self._draw_rect(rect, bg)
+        self._draw_rect_outline(rect, border)
+
+        text_x = rect.left + 10
+        text_y = rect.top + 12
+        name_line = f"{node.name} (Tier {node.tier})"
+        cost_line = f"Cost {node.resource_cost:,} | {node.research_time:.0f}s"
+        detail_line = self._node_detail_line(node)
+
+        self._draw_text(text_x, text_y, name_line, self._text_color)
+        self._draw_text(text_x, text_y + 20, cost_line, self._muted_text)
+        self._draw_text(text_x, text_y + 40, detail_line, self._context_text)
+
+    def _node_detail_line(self, node: ResearchNode) -> str:
+        if node.unlocks_ships:
+            ships = ", ".join(node.unlocks_ships)
+            return self._truncate(f"Unlocks: {ships}")
+        if node.stat_bonuses:
+            return self._truncate(node.stat_bonuses[0].description)
+        if node.description:
+            return self._truncate(node.description)
+        return ""
+
+    @staticmethod
+    def _truncate(text: str, max_chars: int = 60) -> str:
+        if len(text) <= max_chars:
+            return text
+        return text[: max_chars - 3] + "..."
 
