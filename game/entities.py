@@ -13,8 +13,8 @@ Vec2 = Tuple[float, float]
 @dataclass
 class Entity:
     position: Vec2
-    rotation: float = 0.0
-    scale: float = 1.0
+    rotation: float = field(default=0.0, kw_only=True)
+    scale: float = field(default=1.0, kw_only=True)
 
 
 @dataclass
