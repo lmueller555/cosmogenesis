@@ -54,6 +54,8 @@ class WireframeRenderer:
         }
         self.selection_color: Tuple[float, float, float, float] = (1.0, 0.82, 0.26, 1.0)
         self.enemy_color: Tuple[float, float, float, float] = (1.0, 0.35, 0.35, 1.0)
+        self._fog_hidden_color: Tuple[float, float, float, float] = (0.02, 0.04, 0.07, 0.55)
+        self._fog_unexplored_color: Tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.82)
 
     def draw_world(
         self,
@@ -99,6 +101,8 @@ class WireframeRenderer:
             if ship in world.selected_ships:
                 color = self.selection_color
             self._draw_mesh(mesh, ship.position, scale, color=color)
+
+        self._draw_fog_overlay(world, camera)
 
         if selection_box is not None:
             self._draw_screen_rect(selection_box[0], selection_box[1], camera.viewport_size)
@@ -184,6 +188,61 @@ class WireframeRenderer:
         gl.glVertex2f(min_x, max_y)
         gl.glEnd()
 
+        gl.glEnable(gl.GL_DEPTH_TEST)
+        gl.glPopMatrix()
+        gl.glMatrixMode(gl.GL_PROJECTION)
+        gl.glPopMatrix()
+        gl.glMatrixMode(gl.GL_MODELVIEW)
+
+    def _draw_fog_overlay(self, world: World, camera: Camera3D) -> None:
+        grid = getattr(world, "visibility", None)
+        if grid is None:
+            return
+        viewport_w, viewport_h = camera.viewport_size
+        if viewport_w <= 0 or viewport_h <= 0:
+            return
+
+        gl.glMatrixMode(gl.GL_PROJECTION)
+        gl.glPushMatrix()
+        gl.glLoadIdentity()
+        gl.glOrtho(0, viewport_w, viewport_h, 0, -1, 1)
+        gl.glMatrixMode(gl.GL_MODELVIEW)
+        gl.glPushMatrix()
+        gl.glLoadIdentity()
+        gl.glDisable(gl.GL_DEPTH_TEST)
+        gl.glEnable(gl.GL_BLEND)
+        gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+
+        for row, col, cell in grid.cells():
+            if not cell.explored:
+                color = self._fog_unexplored_color
+            elif not cell.visual:
+                color = self._fog_hidden_color
+            else:
+                continue
+            min_x, max_x, min_y, max_y = grid.cell_bounds(row, col)
+            corners = (
+                (min_x, min_y),
+                (max_x, min_y),
+                (max_x, max_y),
+                (min_x, max_y),
+            )
+            projected = []
+            for world_pos in corners:
+                screen = camera.world_to_screen(world_pos)
+                if screen is None:
+                    break
+                projected.append(screen)
+            if len(projected) != 4:
+                # TODO: Handle partially visible cells by clipping polygon to viewport.
+                continue
+            gl.glColor4f(*color)
+            gl.glBegin(gl.GL_QUADS)
+            for x, y in projected:
+                gl.glVertex2f(x, y)
+            gl.glEnd()
+
+        gl.glDisable(gl.GL_BLEND)
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glPopMatrix()
         gl.glMatrixMode(gl.GL_PROJECTION)
