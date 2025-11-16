@@ -15,6 +15,7 @@ class World:
     planetoids: List[Planetoid] = field(default_factory=list)
     bases: List[Base] = field(default_factory=list)
     ships: List[Ship] = field(default_factory=list)
+    selected_ships: List[Ship] = field(default_factory=list)
 
     # TODO: Track fog-of-war state, radar reveals, and additional entity types.
 

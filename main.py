@@ -7,6 +7,7 @@ from typing import Tuple
 import pygame
 
 from game.camera import Camera2D
+from game.selection import pick_ship, select_single_ship
 from game.world import create_initial_world
 from rendering.draw_system import WireframeRenderer
 from rendering.opengl_context import initialize_gl, resize_viewport
@@ -57,6 +58,10 @@ def run() -> None:
                 pygame.display.set_mode(event.size, pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE)
                 resize_viewport(event.size)
                 camera.update_viewport(event.size)
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                world_pos = camera.screen_to_world(event.pos)
+                ship = pick_ship(world, world_pos)
+                select_single_ship(world, ship)
 
         handle_camera_input(camera, dt)
         renderer.draw_world(world, camera)

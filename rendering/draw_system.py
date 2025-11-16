@@ -47,10 +47,10 @@ class WireframeRenderer:
             "Abyssal Crown": create_abyssal_crown_mesh(),
             "Oblivion Spire": create_oblivion_spire_mesh(),
         }
+        self.selection_color: Tuple[float, float, float, float] = (1.0, 0.82, 0.26, 1.0)
 
     def draw_world(self, world: World, camera: Camera2D) -> None:
         gl.glClear(gl.GL_COLOR_BUFFER_BIT)
-        gl.glColor4f(*LINE_COLOR)
 
         for planetoid in world.planetoids:
             scale = planetoid.radius / 60.0
@@ -65,9 +65,19 @@ class WireframeRenderer:
                 # TODO: add visual fallback for ships without bespoke wireframes.
                 continue
             scale = self._ship_scale_for(ship.definition.ship_class)
-            self._draw_mesh(mesh, ship.position, scale, camera)
+            color = self.selection_color if ship in world.selected_ships else LINE_COLOR
+            self._draw_mesh(mesh, ship.position, scale, camera, color=color)
 
-    def _draw_mesh(self, mesh: WireframeMesh, position: Tuple[float, float], scale: float, camera: Camera2D) -> None:
+    def _draw_mesh(
+        self,
+        mesh: WireframeMesh,
+        position: Tuple[float, float],
+        scale: float,
+        camera: Camera2D,
+        *,
+        color: Tuple[float, float, float, float] = LINE_COLOR,
+    ) -> None:
+        gl.glColor4f(*color)
         gl.glBegin(gl.GL_LINES)
         for start_index, end_index in mesh.segments:
             sx, sy = mesh.vertices[start_index]
