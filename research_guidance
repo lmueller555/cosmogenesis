@@ -1,0 +1,850 @@
+COSMOGENESIS – `research_guidance`
+(Authoritative Tech & Research Design – **Do Not Modify**)
+
+---
+
+## A. Meta-Rules for the LLM Coder
+
+1. **This `research_guidance` document is authoritative.**
+
+   * You **must not** edit, override, reinterpret, or “improve” this document.
+   * You **must not** generate alternate or supplemental guidance documents (e.g., `research_guidance_v2`, `tech_notes`, `balance_ideas`, etc.).
+   * If anything is unclear or seems missing, you must:
+
+     * Implement the simplest behavior consistent with this document, and
+     * Leave a `TODO` or comment asking the human designer for clarification.
+
+2. **Relationship to Other Guidance**
+
+   * Overall gameplay, facilities, and tech concepts come from **`game_guidance`**.
+   * Specific ships, their stats, lore, and wireframe geometry come from **`ship_guidance`**.
+   * If there is a perceived conflict:
+
+     * Do **not** resolve it yourself.
+     * Follow the simplest consistent interpretation and flag it with a `TODO` for the human designer.
+
+3. **No New Systems**
+
+   * Do **not** invent new resource types, research trees, facility categories, or ship hulls beyond what is described here and in `game_guidance` / `ship_guidance`.
+   * You may refactor code and data structures, but you may not change the intended design.
+
+---
+
+## B. Conceptual Overview of Research & Tech
+
+The research system in Cosmogenesis is a **facility-gated tech tree framework** that controls:
+
+1. **Ship Unlocks**
+
+   * Access to **larger/more powerful ships** (Line, Capital) and advanced Strike/Escort hulls.
+
+2. **Ship & Structure Upgrades**
+
+   * Deeper upgrades to ship stats (damage, shields, armor, speed, sensors).
+   * Upgrades to base defenses, sensor ranges, and economic performance.
+
+3. **Dependency on Facilities/Modules**
+
+   * Tech trees are hosted by specific **facilities/modules** (built near or on the Base).
+   * Each facility has stats: `resource_cost`, `build_time`, `health`, `shields`.
+   * **If a facility is destroyed, its tech tree is inaccessible** until the facility is rebuilt.
+
+     * No new research from that tree may be started.
+     * The UI for that tree must be disabled or show as “offline.”
+   * Completed research usually remains in effect unless the human designer later specifies otherwise.
+
+---
+
+## C. Core Data Model & Implementation Expectations
+
+Every research node **must** be represented with at least:
+
+* `id` (string, unique key, e.g., `"SF_STRIKE_FUNDAMENTALS_I"`)
+* `name` (short human-readable label)
+* `tree` (which tech tree it belongs to, e.g., `"Shipwright Foundry"`)
+* `tier` (integer indicating rough depth: 1 = early, 2 = mid, 3+ = late)
+* `resource_cost` (integer)
+* `research_time` (seconds)
+* `host_facility_type` (which facility must exist and be online)
+* `prerequisites` (list of other `id`s that must already be completed)
+* `unlocks` (structured info about what it enables – ships, upgrades, etc.)
+* `description` (short design description of purpose)
+
+You may choose any reasonable internal representation (dataclasses, JSON, dicts), but it must be easy to:
+
+* Check prerequisites.
+* Check facility presence/health.
+* Check and apply unlock effects.
+
+---
+
+## D. Facilities & Their Trees (Top-Level Mapping)
+
+This document formalizes four **facility types** and their associated tech trees:
+
+1. **Shipwright Foundry**
+
+   * Focus: **Strike & Escort hull unlocks** and early hull/stat upgrades.
+   * Tree name: `"Shipwright Foundry"`.
+
+2. **Fleet Forge**
+
+   * Focus: **Line & Capital hull unlocks** and heavy weapon/frame upgrades.
+   * Tree name: `"Fleet Forge"`.
+
+3. **Research Nexus**
+
+   * Focus: **Global ship stat upgrades & sensors**, economy/specialized research.
+   * Tree name: `"Research Nexus"`.
+
+4. **Defense Grid Node**
+
+   * Focus: **Base and facility defenses**, radar improvements, area defense tech.
+   * Tree name: `"Defense Grid Node"`.
+
+> **Important:**
+> The construction of these facilities (their own `resource_cost`, `build_time`, `health`, `shields`, and wireframe geometry) is defined conceptually in `game_guidance`.
+> This document defines what **research** each facility enables.
+
+---
+
+## E. Shipwright Foundry Tree – Strike & Escort Progression
+
+**Tree Name:** `"Shipwright Foundry"`
+**Host Facility Type:** `ShipwrightFoundry` (or similar internal identifier)
+
+This tree governs **basic hull unlocks** for Strike/Escort and their early upgrades.
+
+### E.1 Node SF-1 – Strike Fundamentals I
+
+* `id`: `"SF_STRIKE_FUNDAMENTALS_I"`
+
+* `name`: "Strike Fundamentals I"
+
+* `tier`: 1
+
+* `host_facility_type`: ShipwrightFoundry
+
+* `resource_cost`: 1000
+
+* `research_time`: 20 s
+
+* `prerequisites`: [] (none, aside from facility existing and online)
+
+* `unlocks`:
+
+  * Ship unlocks:
+
+    * **Spearling** (Strike interceptor)
+    * **Wisp** (Strike recon)
+  * Implementation note:
+
+    * These are the **baseline early-game Strike hulls**.
+    * In starting scenarios, this node may be pre-completed.
+
+* `description`:
+
+  * Formalizes the basic Strike hull production lines: small, fast interceptors and recon craft.
+
+---
+
+### E.2 Node SF-2 – Escort Design Principles I
+
+* `id`: `"SF_ESCORT_DESIGN_I"`
+
+* `name`: "Escort Design Principles I"
+
+* `tier`: 1
+
+* `host_facility_type`: ShipwrightFoundry
+
+* `resource_cost`: 2500
+
+* `research_time`: 40 s
+
+* `prerequisites`: ["SF_STRIKE_FUNDAMENTALS_I"]
+
+* `unlocks`:
+
+  * Ship unlocks:
+
+    * **Warden** (Escort defense frigate)
+
+* `description`:
+
+  * Unlocks medium escort hull frameworks, starting with the Warden, focusing on convoy and fleet protection roles.
+
+---
+
+### E.3 Node SF-3 – Advanced Strike Doctrine
+
+* `id`: `"SF_ADVANCED_STRIKE_DOCTRINE"`
+
+* `name`: "Advanced Strike Doctrine"
+
+* `tier`: 2
+
+* `host_facility_type`: ShipwrightFoundry
+
+* `resource_cost`: 3000
+
+* `research_time`: 45 s
+
+* `prerequisites`: ["SF_STRIKE_FUNDAMENTALS_I"]
+
+* `unlocks`:
+
+  * Ship unlocks:
+
+    * **Daggerwing** (Strike raider)
+  * Stat upgrades:
+
+    * **Global Strike Speed I**:
+
+      * +7% `flight_speed` to all Strike-class ships.
+    * **Global Strike Firing Range I**:
+
+      * +5% `firing_range` to all Strike-class ships.
+
+* `description`:
+
+  * Shifts Strike doctrine from mere scouting to aggressive raiding, enabling heavier Strike hulls and better hit-and-run capability.
+
+---
+
+### E.4 Node SF-4 – Escort Heavy Frames
+
+* `id`: `"SF_ESCORT_HEAVY_FRAMES"`
+
+* `name`: "Escort Heavy Frames"
+
+* `tier`: 2
+
+* `host_facility_type`: ShipwrightFoundry
+
+* `resource_cost`: 4000
+
+* `research_time`: 60 s
+
+* `prerequisites`: ["SF_ESCORT_DESIGN_I"]
+
+* `unlocks`:
+
+  * Ship unlocks:
+
+    * **Sunlance** (Escort assault frigate)
+    * **Auric Veil** (Escort support corvette)
+  * Stat upgrades:
+
+    * **Global Escort Hull I**:
+
+      * +8% `health` and +5% `armor` for all Escort-class ships.
+
+* `description`:
+
+  * Advances Escort architecture to heavier roles: direct assault (Sunlance) and shield support (Auric Veil).
+  * Escorts gain more staying power on the field.
+
+---
+
+### E.5 Node SF-5 – Strike Weapon Optimization I
+
+* `id`: `"SF_STRIKE_WEAPON_OPT_I"`
+
+* `name`: "Strike Weapon Optimization I"
+
+* `tier`: 3
+
+* `host_facility_type`: ShipwrightFoundry
+
+* `resource_cost`: 3500
+
+* `research_time`: 55 s
+
+* `prerequisites`: ["SF_ADVANCED_STRIKE_DOCTRINE"]
+
+* `unlocks`:
+
+  * Stat upgrades:
+
+    * +10% `weapon_damage` for all Strike-class ships.
+    * +5% `energy_regen` for Strike-class ships.
+
+* `description`:
+
+  * Refines Strike weapon targeting, burst fire patterns, and energy routing, turning light units into more serious threats when massed.
+
+---
+
+## F. Fleet Forge Tree – Line & Capital Progression
+
+**Tree Name:** `"Fleet Forge"`
+**Host Facility Type:** `FleetForge`
+
+This tree governs **Line and Capital hull unlocks** and heavy weapon/frame tech.
+
+### F.1 Node FF-1 – Heavy Hull Fabrication
+
+* `id`: `"FF_HEAVY_HULL_FABRICATION"`
+
+* `name`: "Heavy Hull Fabrication"
+
+* `tier`: 1
+
+* `host_facility_type`: FleetForge
+
+* `resource_cost`: 5000
+
+* `research_time`: 60 s
+
+* `prerequisites`: [] (facility online)
+
+* `unlocks`:
+
+  * Ship unlocks:
+
+    * **Iron Halberd** (Line brawler cruiser)
+
+* `description`:
+
+  * Establishes the industrial capability to fabricate large Line-class hulls, beginning with the Iron Halberd.
+
+---
+
+### F.2 Node FF-2 – Fortress Architecture
+
+* `id`: `"FF_FORTRESS_ARCHITECTURE"`
+
+* `name`: "Fortress Architecture"
+
+* `tier`: 2
+
+* `host_facility_type`: FleetForge
+
+* `resource_cost`: 6000
+
+* `research_time`: 70 s
+
+* `prerequisites`: ["FF_HEAVY_HULL_FABRICATION"]
+
+* `unlocks`:
+
+  * Ship unlocks:
+
+    * **Star Fortress** (Line defensive anchor)
+  * Stat upgrades:
+
+    * **Line Hull Reinforcement I**:
+
+      * +10% `health` and +10% `armor` for all Line-class ships.
+
+* `description`:
+
+  * Focuses on defensive design changes, enabling the Star Fortress and tougher Line hull architecture.
+
+---
+
+### F.3 Node FF-3 – Long-Range Projection Systems
+
+* `id`: `"FF_LONG_RANGE_PROJECTION"`
+
+* `name`: "Long-Range Projection Systems"
+
+* `tier`: 2
+
+* `host_facility_type`: FleetForge
+
+* `resource_cost`: 6500
+
+* `research_time`: 75 s
+
+* `prerequisites`: ["FF_HEAVY_HULL_FABRICATION"]
+
+* `unlocks`:
+
+  * Ship unlocks:
+
+    * **Lance of Dawn** (Line beam cruiser)
+  * Stat upgrades:
+
+    * **Line Firing Range I**:
+
+      * +12% `firing_range` for all Line-class ships.
+
+* `description`:
+
+  * Introduces advanced beam focusing and targeting systems for long-range engagements.
+
+---
+
+### F.4 Node FF-4 – Capital Keel Assembly
+
+* `id`: `"FF_CAPITAL_KEEL_ASSEMBLY"`
+
+* `name`: "Capital Keel Assembly"
+
+* `tier`: 3
+
+* `host_facility_type`: FleetForge
+
+* `resource_cost`: 9000
+
+* `research_time`: 90 s
+
+* `prerequisites`: ["FF_FORTRESS_ARCHITECTURE"]
+
+* `unlocks`:
+
+  * Ship unlocks:
+
+    * **Titan’s Ward** (Capital command dreadnought)
+
+* `description`:
+
+  * Grants capability to assemble massive Capital keels and integrated command cores.
+
+---
+
+### F.5 Node FF-5 – Crown-Class Yard Expansion
+
+* `id`: `"FF_CROWN_YARDS"`
+
+* `name`: "Crown-Class Yard Expansion"
+
+* `tier`: 3
+
+* `host_facility_type`: FleetForge
+
+* `resource_cost`: 10,000
+
+* `research_time`: 100 s
+
+* `prerequisites`: ["FF_CAPITAL_KEEL_ASSEMBLY", "FF_LONG_RANGE_PROJECTION"]
+
+* `unlocks`:
+
+  * Ship unlocks:
+
+    * **Abyssal Crown** (Capital siege carrier)
+
+* `description`:
+
+  * Enlarges fleet forge infrastructure to support carrier-scale framework and heavy hangar construction.
+
+---
+
+### F.6 Node FF-6 – Spire-Class Blackworks
+
+* `id`: `"FF_SPIRE_BLACKWORKS"`
+
+* `name`: "Spire-Class Blackworks"
+
+* `tier`: 4
+
+* `host_facility_type`: FleetForge
+
+* `resource_cost`: 12,000
+
+* `research_time`: 120 s
+
+* `prerequisites`: ["FF_CROWN_YARDS"]
+
+* `unlocks`:
+
+  * Ship unlocks:
+
+    * **Oblivion Spire** (Capital doomsday battleship)
+  * Stat upgrades:
+
+    * **Capital Weapon Systems I**:
+
+      * +15% `weapon_damage` and +10% `firing_range` for all Capital-class ships.
+
+* `description`:
+
+  * Represents cutting-edge, borderline forbidden shipbuilding techniques necessary for the Oblivion Spire and its doomsday systems.
+
+---
+
+## G. Research Nexus Tree – Global Stats & Sensors
+
+**Tree Name:** `"Research Nexus"`
+**Host Facility Type:** `ResearchNexus`
+
+This tree governs **global upgrades** to ship stats, sensors, energy systems, and economy.
+
+### G.1 Node RN-1 – Shield Theory I
+
+* `id`: `"RN_SHIELD_THEORY_I"`
+
+* `name`: "Shield Theory I"
+
+* `tier`: 1
+
+* `host_facility_type`: ResearchNexus
+
+* `resource_cost`: 3000
+
+* `research_time`: 45 s
+
+* `prerequisites`: []
+
+* `unlocks`:
+
+  * Stat upgrades (global, all ship classes + base/facilities if desired):
+
+    * +10% `shields` for all ships and the Base.
+
+* `description`:
+
+  * Early shield dispersion improvements, making all shields thicker and more resilient.
+
+---
+
+### G.2 Node RN-2 – Shield Theory II
+
+* `id`: `"RN_SHIELD_THEORY_II"`
+
+* `name`: "Shield Theory II"
+
+* `tier`: 2
+
+* `host_facility_type`: ResearchNexus
+
+* `resource_cost`: 4500
+
+* `research_time`: 60 s
+
+* `prerequisites`: ["RN_SHIELD_THEORY_I"]
+
+* `unlocks`:
+
+  * Stat upgrades:
+
+    * Additional +15% `shields` for all ships and Base.
+    * +5% `energy_regen` for shields (if shield regen is modeled via energy).
+
+* `description`:
+
+  * More advanced field harmonics, significantly thickening shields.
+
+---
+
+### G.3 Node RN-3 – Weapon Optimization I
+
+* `id`: `"RN_WEAPON_OPTIMIZATION_I"`
+
+* `name`: "Weapon Optimization I"
+
+* `tier`: 1
+
+* `host_facility_type`: ResearchNexus
+
+* `resource_cost`: 3500
+
+* `research_time`: 50 s
+
+* `prerequisites`: []
+
+* `unlocks`:
+
+  * Stat upgrades:
+
+    * +8% `weapon_damage` for all ships.
+    * +5% `firing_range` for all ships.
+
+* `description`:
+
+  * General improvements to charge routing, beam focusing, and projectile delivery.
+
+---
+
+### G.4 Node RN-4 – Engine Overhaul I
+
+* `id`: `"RN_ENGINE_OVERHAUL_I"`
+
+* `name`: "Engine Overhaul I"
+
+* `tier`: 1
+
+* `host_facility_type`: ResearchNexus
+
+* `resource_cost`: 3200
+
+* `research_time`: 45 s
+
+* `prerequisites`: []
+
+* `unlocks`:
+
+  * Stat upgrades:
+
+    * +8% `flight_speed` for all ships.
+    * +5% `energy_regen` (better power distribution).
+
+* `description`:
+
+  * Improves drive efficiency and power coupling for fleet-wide mobility.
+
+---
+
+### G.5 Node RN-5 – Sensor Integration I
+
+* `id`: `"RN_SENSOR_INTEGRATION_I"`
+
+* `name`: "Sensor Integration I"
+
+* `tier`: 2
+
+* `host_facility_type`: ResearchNexus
+
+* `resource_cost`: 4000
+
+* `research_time`: 55 s
+
+* `prerequisites`: ["RN_ENGINE_OVERHAUL_I"]
+
+* `unlocks`:
+
+  * Stat upgrades:
+
+    * +12% `visual_range` for all ships and bases.
+    * +15% `radar_range` for all ships and bases.
+
+* `description`:
+
+  * Harmonizes sensor feeds and uplinks across the fleet, improving spatial awareness.
+
+---
+
+### G.6 Node RN-6 – Economic Throughput I
+
+* `id`: `"RN_ECON_THROUGHPUT_I"`
+
+* `name`: "Economic Throughput I"
+
+* `tier`: 2
+
+* `host_facility_type`: ResearchNexus
+
+* `resource_cost`: 5000
+
+* `research_time`: 70 s
+
+* `prerequisites`: ["RN_SHIELD_THEORY_I"]
+
+* `unlocks`:
+
+  * Economy upgrades:
+
+    * +10% resource income from **planetoid mining**.
+    * +5% resource income from **asteroid mining**.
+
+* `description`:
+
+  * Optimizes mining patterns and refining processes to yield more usable resource per unit time.
+
+---
+
+## H. Defense Grid Node Tree – Base & Facility Defense
+
+**Tree Name:** `"Defense Grid Node"`
+**Host Facility Type:** `DefenseGridNode`
+
+This tree improves **Base and facility survivability**, defenses, and strategic detection.
+
+### H.1 Node DG-1 – Station Hardening I
+
+* `id`: `"DG_STATION_HARDENING_I"`
+
+* `name`: "Station Hardening I"
+
+* `tier`: 1
+
+* `host_facility_type`: DefenseGridNode
+
+* `resource_cost`: 3000
+
+* `research_time`: 45 s
+
+* `prerequisites`: []
+
+* `unlocks`:
+
+  * Base/facility upgrades:
+
+    * +12% `health` and +10% `armor` for the Base (Astral Citadel).
+    * +10% `health` for all facilities/modules.
+
+* `description`:
+
+  * Structural reinforcement and damage control improvements for static infrastructure.
+
+---
+
+### H.2 Node DG-2 – Adaptive Defense Arrays
+
+* `id`: `"DG_ADAPTIVE_DEFENSE_ARRAYS"`
+
+* `name`: "Adaptive Defense Arrays"
+
+* `tier`: 2
+
+* `host_facility_type`: DefenseGridNode
+
+* `resource_cost`: 4500
+
+* `research_time`: 60 s
+
+* `prerequisites`: ["DG_STATION_HARDENING_I"]
+
+* `unlocks`:
+
+  * Base defensive upgrades:
+
+    * +15% `weapon_damage` for the Base’s defense batteries.
+    * +10% `firing_range` for the Base’s defense batteries.
+  * Optional implementation (if supported):
+
+    * Slight increase in Base’s `visual_range` (+5%).
+
+* `description`:
+
+  * Upgrades targeting algorithms and turret layouts for station defense.
+
+---
+
+### H.3 Node DG-3 – Deep Space Grid
+
+* `id`: `"DG_DEEP_SPACE_GRID"`
+
+* `name`: "Deep Space Grid"
+
+* `tier`: 3
+
+* `host_facility_type`: DefenseGridNode
+
+* `resource_cost`: 5500
+
+* `research_time`: 75 s
+
+* `prerequisites`: ["DG_STATION_HARDENING_I", "RN_SENSOR_INTEGRATION_I"]
+
+* `unlocks`:
+
+  * Detection upgrades:
+
+    * +20% `radar_range` for the Base and all facilities.
+    * Optionally, increased radar sensitivity to small ships (Strikes) if separate detection logic exists.
+
+* `description`:
+
+  * Extends and integrates long-range sensor nets anchored at defense nodes.
+
+---
+
+### H.4 Node DG-4 – Emergency Repair Protocols
+
+* `id`: `"DG_EMERGENCY_REPAIR_PROTOCOLS"`
+
+* `name`: "Emergency Repair Protocols"
+
+* `tier`: 3
+
+* `host_facility_type`: DefenseGridNode
+
+* `resource_cost`: 5000
+
+* `research_time`: 70 s
+
+* `prerequisites`: ["DG_STATION_HARDENING_I"]
+
+* `unlocks`:
+
+  * Passive repair behavior (if implemented by the coder):
+
+    * Base and facilities gain a **slow passive HP regen** when out of combat.
+
+      * Suggested: restore a small percentage (e.g., ~0.5%–1% of max health per second) after a delay since last damage.
+    * Implementation detail: exact rate and delay are tunable but should respect the intended “slow but meaningful” repair.
+
+* `description`:
+
+  * Implements automated repair drones and damage control subroutines for static defenses.
+
+---
+
+## I. Facility Destruction & Tech Availability Rules
+
+The following rules **must be enforced** by the implementation:
+
+1. **Host Facility Presence Check**
+
+   * To **start** research on a node:
+
+     * The corresponding `host_facility_type` facility must:
+
+       * Exist for that player.
+       * Be **online** (not destroyed, not at 0 HP).
+   * If the facility is destroyed while research is in progress:
+
+     * Recommended default: pause or cancel that research, depending on human designer preference.
+
+       * Simplest approach: **pause** research and resume automatically once facility is rebuilt.
+       * If cancellation is implemented, refund behavior must be clearly documented in code comments.
+
+2. **Post-Destruction Access**
+
+   * If a facility is destroyed:
+
+     * **No new research** from that tree can be started.
+     * The UI for that tree should show it as **offline/disabled**.
+   * Once the facility is **rebuilt**:
+
+     * Previously completed nodes remain completed.
+     * In-progress nodes resume or may be restarted (per implementation choice, documented in code).
+     * New nodes can be queued again (prerequisites still apply).
+
+3. **Completed Research**
+
+   * By default, **completed research effects persist** even if the facility is later destroyed.
+   * This means:
+
+     * Unlocked ships remain buildable (unless an additional rule explicitly ties build ability to facility presence – if that is desired later, it must be specified by the human designer).
+     * Global stat bonuses remain active.
+   * Do **not** revoke completed research unless the human designer explicitly changes this rule.
+
+---
+
+## J. UI Considerations (High-Level)
+
+You do **not** need to fully design all UI panels, but you should:
+
+* Provide a **tech tree screen/panel** per facility type:
+
+  * Shows nodes, prerequisites, and completion/locked states.
+  * Allows selecting and starting available research if:
+
+    * The facility is online.
+    * The node’s prerequisites are met.
+    * The player has enough resources.
+
+* Clearly indicate:
+
+  * Which tree is currently **inactive** because the hosting facility is destroyed.
+  * Research in progress vs. completed vs. locked.
+
+---
+
+## K. Final Reminder to the LLM Coder
+
+* You **must not** modify this `research_guidance` document.
+* You **must not** create alternate or “improved” versions of it or any other guidance documents.
+* You **must** implement:
+
+  * Facility-linked research trees exactly as described.
+  * Ship unlock progression for larger/more powerful ships (Line & Capital) through the **Fleet Forge** tree.
+  * Deeper stat upgrades via **Research Nexus** and class-specific upgrades in **Shipwright Foundry** and **Fleet Forge**.
+  * Base and facility defensive research via **Defense Grid Node**, with destruction gating access to those trees until rebuild.
+
+When in doubt, choose the simplest implementation that fits this guidance and clearly mark any questions or assumptions in code comments for the human designer to review.
