@@ -104,3 +104,358 @@ def create_astral_citadel_mesh() -> WireframeMesh:
     )
 
     return WireframeMesh(vertices, lines)
+
+
+# --- Ship Meshes ---------------------------------------------------------
+
+
+def _loop_segments(vertex_count: int) -> List[Tuple[int, int]]:
+    return [(i, (i + 1) % vertex_count) for i in range(vertex_count)]
+
+
+def create_spearling_mesh() -> WireframeMesh:
+    """Arrowhead strike craft per `ship_guidance`."""
+
+    vertices: List[Vec2] = [
+        (0.0, 18.0),  # nose
+        (-10.0, 0.0),
+        (-6.0, -8.0),
+        (-3.0, -16.0),
+        (3.0, -16.0),
+        (6.0, -8.0),
+        (10.0, 0.0),
+        (0.0, -6.0),
+    ]
+    segments = [
+        (0, 1),
+        (0, 6),
+        (1, 2),
+        (2, 3),
+        (3, 4),
+        (4, 5),
+        (5, 6),
+        (3, 7),
+        (4, 7),
+    ]
+    return WireframeMesh(vertices, segments)
+
+
+def create_wisp_mesh() -> WireframeMesh:
+    """Needle recon craft with antennae and central diamond."""
+
+    vertices: List[Vec2] = [
+        (0.0, 22.0),
+        (0.0, -24.0),
+        (-3.0, 10.0),
+        (3.0, 10.0),
+        (-6.0, 12.0),
+        (6.0, 12.0),
+        (-5.0, -2.0),
+        (0.0, -6.0),
+        (5.0, -2.0),
+    ]
+    segments = [
+        (0, 1),  # spine
+        (2, 3),
+        (4, 5),  # antennae
+        (2, 6),
+        (3, 8),
+        (6, 7),
+        (7, 8),
+        (6, 8),
+    ]
+    return WireframeMesh(vertices, segments)
+
+
+def create_daggerwing_mesh() -> WireframeMesh:
+    """Broad triangular raider silhouette."""
+
+    vertices: List[Vec2] = [
+        (0.0, 24.0),
+        (-24.0, -14.0),
+        (-6.0, -18.0),
+        (0.0, -8.0),
+        (6.0, -18.0),
+        (24.0, -14.0),
+    ]
+    segments = [
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 4),
+        (4, 5),
+        (5, 0),
+        (0, 3),
+        (0, 2),
+        (0, 4),
+    ]
+    return WireframeMesh(vertices, segments)
+
+
+def create_warden_mesh() -> WireframeMesh:
+    vertices: List[Vec2] = [
+        (-18.0, 14.0),
+        (18.0, 14.0),
+        (18.0, -14.0),
+        (-18.0, -14.0),
+        (-26.0, 6.0),
+        (-18.0, 6.0),
+        (-18.0, -6.0),
+        (-26.0, -6.0),
+        (26.0, 6.0),
+        (18.0, 6.0),
+        (18.0, -6.0),
+        (26.0, -6.0),
+        (-8.0, 8.0),
+        (-4.0, 8.0),
+        (-4.0, 4.0),
+        (-8.0, 4.0),
+        (4.0, -4.0),
+        (8.0, -4.0),
+        (8.0, -8.0),
+        (4.0, -8.0),
+    ]
+    segments = []
+    segments.extend(_loop_segments(4))  # hull
+    segments.extend([(4, 5), (5, 6), (6, 7), (7, 4)])
+    segments.extend([(8, 9), (9, 10), (10, 11), (11, 8)])
+    segments.extend([(12, 13), (13, 14), (14, 15), (15, 12)])
+    segments.extend([(16, 17), (17, 18), (18, 19), (19, 16)])
+    segments.append((0, 2))
+    segments.append((1, 3))
+    return WireframeMesh(vertices, segments)
+
+
+def create_sunlance_mesh() -> WireframeMesh:
+    vertices: List[Vec2] = [
+        (0.0, 28.0),
+        (-14.0, -24.0),
+        (14.0, -24.0),
+        (-4.0, 12.0),
+        (4.0, 12.0),
+        (-2.0, -4.0),
+        (2.0, -4.0),
+        (-6.0, -18.0),
+        (6.0, -18.0),
+    ]
+    segments = [
+        (0, 1),
+        (0, 2),
+        (1, 2),
+        (0, 3),
+        (0, 4),
+        (3, 5),
+        (4, 6),
+        (5, 7),
+        (6, 8),
+        (7, 8),
+    ]
+    return WireframeMesh(vertices, segments)
+
+
+def create_auric_veil_mesh() -> WireframeMesh:
+    vertices: List[Vec2] = [
+        (0.0, 16.0),
+        (-14.0, 0.0),
+        (0.0, -16.0),
+        (14.0, 0.0),
+        (0.0, 26.0),
+        (-18.0, 0.0),
+        (0.0, -26.0),
+        (18.0, 0.0),
+    ]
+    segments = [
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 0),
+        (4, 5),
+        (5, 6),
+        (6, 7),
+        (7, 4),
+        (0, 4),
+        (1, 5),
+        (2, 6),
+        (3, 7),
+    ]
+    return WireframeMesh(vertices, segments)
+
+
+def create_iron_halberd_mesh() -> WireframeMesh:
+    vertices: List[Vec2] = [
+        (-14.0, 30.0),
+        (14.0, 30.0),
+        (14.0, -30.0),
+        (-14.0, -30.0),
+        (-30.0, 38.0),
+        (30.0, 38.0),
+        (-18.0, 36.0),
+        (18.0, 36.0),
+        (-14.0, -36.0),
+        (-8.0, -42.0),
+        (8.0, -42.0),
+        (14.0, -36.0),
+    ]
+    segments = _loop_segments(4)
+    segments.extend([(0, 4), (1, 5), (4, 5), (4, 6), (5, 7)])
+    segments.extend([(2, 11), (11, 10), (10, 9), (9, 3), (2, 3)])
+    return WireframeMesh(vertices, segments)
+
+
+def create_star_fortress_mesh() -> WireframeMesh:
+    vertices: List[Vec2] = [
+        (-14.0, 14.0),
+        (14.0, 14.0),
+        (14.0, -14.0),
+        (-14.0, -14.0),
+        (0.0, 26.0),
+        (0.0, -26.0),
+        (-26.0, 0.0),
+        (26.0, 0.0),
+        (-4.0, 4.0),
+        (4.0, 4.0),
+        (4.0, -4.0),
+        (-4.0, -4.0),
+        (-4.0, 30.0),
+        (4.0, 30.0),
+        (4.0, 22.0),
+        (-4.0, 22.0),
+        (-4.0, -22.0),
+        (4.0, -22.0),
+        (4.0, -30.0),
+        (-4.0, -30.0),
+        (-30.0, 4.0),
+        (-22.0, 4.0),
+        (-22.0, -4.0),
+        (-30.0, -4.0),
+        (22.0, 4.0),
+        (30.0, 4.0),
+        (30.0, -4.0),
+        (22.0, -4.0),
+    ]
+    segments = _loop_segments(4)
+    segments.extend([(0, 4), (1, 4), (2, 5), (3, 5), (0, 6), (3, 6), (1, 7), (2, 7)])
+    segments.extend(_loop_segments(4))  # will add duplicates but fine for diamond
+    segments.extend([(8, 9), (9, 10), (10, 11), (11, 8)])
+    segments.extend([(12, 13), (13, 14), (14, 15), (15, 12)])
+    segments.extend([(16, 17), (17, 18), (18, 19), (19, 16)])
+    segments.extend([(20, 21), (21, 22), (22, 23), (23, 20)])
+    segments.extend([(24, 25), (25, 26), (26, 27), (27, 24)])
+    return WireframeMesh(vertices, segments)
+
+
+def create_lance_of_dawn_mesh() -> WireframeMesh:
+    vertices: List[Vec2] = [
+        (0.0, 48.0),
+        (-10.0, 40.0),
+        (10.0, 40.0),
+        (-6.0, -32.0),
+        (6.0, -32.0),
+        (-4.0, -50.0),
+        (4.0, -50.0),
+        (0.0, 36.0),
+        (-14.0, -6.0),
+        (14.0, -6.0),
+    ]
+    segments = [
+        (0, 1),
+        (0, 2),
+        (1, 2),
+        (1, 3),
+        (2, 4),
+        (3, 4),
+        (3, 5),
+        (4, 6),
+        (5, 6),
+        (0, 7),
+        (7, 3),
+        (7, 4),
+        (1, 8),
+        (2, 9),
+    ]
+    return WireframeMesh(vertices, segments)
+
+
+def create_titans_ward_mesh() -> WireframeMesh:
+    vertices: List[Vec2] = [
+        (-40.0, 32.0),
+        (40.0, 32.0),
+        (40.0, -32.0),
+        (-40.0, -32.0),
+        (-32.0, 44.0),
+        (32.0, 44.0),
+        (-20.0, 52.0),
+        (20.0, 52.0),
+        (-32.0, -44.0),
+        (32.0, -44.0),
+        (-20.0, -52.0),
+        (20.0, -52.0),
+        (-12.0, 8.0),
+        (-4.0, 8.0),
+        (-4.0, 0.0),
+        (-12.0, 0.0),
+        (4.0, -8.0),
+        (12.0, -8.0),
+        (12.0, -16.0),
+        (4.0, -16.0),
+    ]
+    segments = _loop_segments(4)
+    segments.extend([(0, 4), (4, 5), (5, 1), (4, 6), (5, 7), (6, 7)])
+    segments.extend([(2, 8), (8, 9), (9, 3), (8, 10), (9, 11), (10, 11)])
+    segments.extend([(12, 13), (13, 14), (14, 15), (15, 12)])
+    segments.extend([(16, 17), (17, 18), (18, 19), (19, 16)])
+    segments.append((0, 2))
+    segments.append((1, 3))
+    return WireframeMesh(vertices, segments)
+
+
+def create_abyssal_crown_mesh() -> WireframeMesh:
+    vertices: List[Vec2] = [
+        (-26.0, 30.0),
+        (26.0, 30.0),
+        (26.0, -30.0),
+        (-26.0, -30.0),
+        (-10.0, 6.0),
+        (10.0, 6.0),
+        (10.0, -6.0),
+        (-10.0, -6.0),
+    ]
+    # Crown ring pieces
+    for angle in range(0, 300, 60):
+        rad = math.radians(angle)
+        vertices.append((math.cos(rad) * 40.0, math.sin(rad) * 40.0))
+    segments = _loop_segments(4)
+    segments.append((0, 2))
+    segments.append((1, 3))
+    segments.extend(_loop_segments(4)[-4:])
+    segments.extend([(4, 5), (5, 6), (6, 7), (7, 4)])
+    # connect crown arcs and spokes
+    crown_start = 8
+    crown_vertices = len(vertices) - crown_start
+    for i in range(crown_vertices - 1):
+        segments.append((crown_start + i, crown_start + i + 1))
+    segments.append((crown_start, crown_start + crown_vertices - 1))
+    for i in range(crown_vertices):
+        segments.append((crown_start + i, crown_start + ((i + 3) % crown_vertices)))
+    segments.extend([(4, crown_start), (5, crown_start + 1), (6, crown_start + 2), (7, crown_start + 3)])
+    return WireframeMesh(vertices, segments)
+
+
+def create_oblivion_spire_mesh() -> WireframeMesh:
+    vertices: List[Vec2] = [
+        (-14.0, 28.0),
+        (14.0, 28.0),
+        (14.0, -28.0),
+        (-14.0, -28.0),
+        (-6.0, 60.0),
+        (6.0, 60.0),
+        (-4.0, 80.0),
+        (4.0, 80.0),
+        (-10.0, 46.0),
+        (10.0, 46.0),
+    ]
+    segments = _loop_segments(4)
+    segments.extend([(0, 4), (1, 5), (4, 5), (4, 6), (5, 7), (6, 7)])
+    segments.extend([(4, 8), (5, 9), (8, 9)])
+    segments.append((2, 3))
+    return WireframeMesh(vertices, segments)
