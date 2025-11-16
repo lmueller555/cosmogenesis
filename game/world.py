@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from .ai import EnemyAIController
-from .entities import Asteroid, Base, Facility, Planetoid, Ship
+from .entities import Asteroid, Base, Facility, Planetoid, Ship, CombatTarget
 from .ship_registry import (
     ShipDefinition,
     all_ship_definitions,
@@ -14,6 +14,7 @@ from .ship_registry import (
 )
 from .research import ResearchAvailability, ResearchManager, ResearchNode
 from .visibility import VisibilityGrid
+from .facility_registry import get_facility_definition
 
 Vec2 = Tuple[float, float]
 
@@ -28,14 +29,6 @@ SHIP_CLASS_PRODUCTION_FACILITY: dict[str, Optional[str]] = {
     "Line": "FleetForge",
     "Capital": "FleetForge",
 }
-
-FACILITY_DISPLAY_NAMES = {
-    "ShipwrightFoundry": "Shipwright Foundry",
-    "FleetForge": "Fleet Forge",
-    "ResearchNexus": "Research Nexus",
-    "DefenseGridNode": "Defense Grid Node",
-}
-
 
 @dataclass
 class World:
@@ -149,6 +142,8 @@ class World:
 
         if facility not in self.facilities:
             self.facilities.append(facility)
+        if facility.host_base is not None:
+            facility.faction = facility.host_base.faction
         self._sync_facility_type(facility.facility_type)
 
     def remove_facility(self, facility: Facility) -> None:
@@ -180,7 +175,11 @@ class World:
     def facility_display_name(self, facility_type: str) -> str:
         """Return a human-friendly facility name for UI surfaces."""
 
-        return FACILITY_DISPLAY_NAMES.get(facility_type, facility_type)
+        try:
+            definition = get_facility_definition(facility_type)
+            return definition.display_name
+        except KeyError:
+            return facility_type
 
     def unlocked_ship_definitions(self) -> List[ShipDefinition]:
         """Expose the ship hulls currently unlocked for production."""
@@ -261,28 +260,100 @@ class World:
     def _update_combat(self, dt: float) -> None:
         """Resolve simplistic auto-attacks between hostile ships."""
 
-        destroyed: List[Ship] = []
-        for ship in self.ships:
-            if ship.target is None or ship.target not in self.ships or not ship.in_firing_range(ship.target):
-                ship.acquire_target(self.ships)
-            if ship.target is None:
+        destroyed_ships: List[Ship] = []
+        destroyed_bases: List[Base] = []
+        destroyed_facilities: List[Facility] = []
+
+        target_pools = self._enemy_target_pools()
+
+        for ship in list(self.ships):
+            if ship.current_health <= 0.0:
+                destroyed_ships.append(ship)
                 continue
-            if not ship.is_enemy(ship.target):
+            candidates = target_pools.get(ship.faction, [])
+            if not candidates:
                 ship.clear_target()
+                continue
+            if ship.target is not None:
+                if not self._target_present(ship.target):
+                    ship.clear_target()
+                elif ship.target.faction == ship.faction:
+                    ship.clear_target()
+                elif hasattr(ship.target, "is_destroyed") and ship.target.is_destroyed():
+                    ship.clear_target()
+            if ship.target is None:
+                ship.acquire_target(candidates)
+            target = ship.target
+            if target is None:
+                continue
+            if not ship.in_firing_range(target):
                 continue
             if ship.can_fire():
                 damage = ship.deal_damage()
-                # TODO: Replace with burst fire logic once cadence guidance is available.
-                if ship.target.apply_damage(damage):
-                    destroyed.append(ship.target)
+                if target.apply_damage(damage):
+                    if isinstance(target, Ship) and target not in destroyed_ships:
+                        destroyed_ships.append(target)
+                    elif isinstance(target, Base) and target not in destroyed_bases:
+                        destroyed_bases.append(target)
+                    elif isinstance(target, Facility) and target not in destroyed_facilities:
+                        destroyed_facilities.append(target)
                     ship.clear_target()
 
-        if destroyed:
-            for ship in destroyed:
+        if destroyed_ships:
+            for ship in destroyed_ships:
                 if ship in self.ships:
                     self.ships.remove(ship)
                 if ship in self.selected_ships:
                     self.selected_ships.remove(ship)
+
+        for base in destroyed_bases:
+            self._handle_base_destroyed(base)
+
+        for facility in destroyed_facilities:
+            self._handle_facility_destroyed(facility)
+
+    def _enemy_target_pools(self) -> Dict[str, List[CombatTarget]]:
+        """Precompute enemy targets for each faction."""
+
+        targets: List[CombatTarget] = []
+        for ship in self.ships:
+            if ship.current_health > 0.0:
+                targets.append(ship)
+        for base in self.bases:
+            if not base.is_destroyed():
+                targets.append(base)
+        for facility in self.facilities:
+            if not facility.is_destroyed():
+                targets.append(facility)
+        factions = {target.faction for target in targets}
+        pools: Dict[str, List[CombatTarget]] = {}
+        for faction in factions:
+            pools[faction] = [target for target in targets if target.faction != faction]
+        return pools
+
+    def _target_present(self, target: CombatTarget) -> bool:
+        if isinstance(target, Ship):
+            return target in self.ships and target.current_health > 0.0
+        if isinstance(target, Base):
+            return target in self.bases and not target.is_destroyed()
+        if isinstance(target, Facility):
+            return target in self.facilities and not target.is_destroyed()
+        return False
+
+    def _handle_base_destroyed(self, base: Base) -> None:
+        if base in self.bases:
+            self.bases.remove(base)
+        if self.selected_base is base:
+            self.selected_base = None
+        attached = [facility for facility in self.facilities if facility.host_base is base]
+        for facility in attached:
+            self._handle_facility_destroyed(facility)
+        # TODO: trigger defeat/game-over handling when the player's last base dies.
+
+    def _handle_facility_destroyed(self, facility: Facility) -> None:
+        if facility in self.facilities:
+            self.facilities.remove(facility)
+        self._sync_facility_type(facility.facility_type)
 
     def _apply_ship_research(self, ship: Ship) -> None:
         if ship.faction != "player":

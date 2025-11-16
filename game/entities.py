@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Mapping, Optional, Tuple
+from typing import List, Mapping, Optional, Sequence, Tuple, Union
 
 from .ship_registry import ShipDefinition
 from .production import ProductionQueue, ProductionJob
+from .facility_registry import FacilityDefinition, get_facility_definition
 
 Vec2 = Tuple[float, float]
 
@@ -82,6 +83,7 @@ class Base(Entity):
     radar_range_value: float = field(init=False)
     firing_range_value: float = field(init=False)
     weapon_damage_value: float = field(init=False)
+    destroyed: bool = field(default=False, init=False)
 
     # TODO: Attach upgrade modules and research integration when systems are implemented.
 
@@ -142,20 +144,108 @@ class Base(Entity):
         )
         self.energy_regen_value = float(self.energy_regen) * mult("energy_regen")
 
+    def apply_damage(self, amount: float) -> bool:
+        """Apply incoming damage; returns ``True`` if the base is destroyed."""
+
+        if amount <= 0.0 or self.destroyed:
+            return False
+        if self.current_shields > 0.0:
+            shield_damage = min(amount, self.current_shields)
+            self.current_shields -= shield_damage
+            amount -= shield_damage
+        if amount > 0.0:
+            self.current_health -= amount
+        if self.current_health <= 0.0:
+            self.destroyed = True
+            self.current_health = 0.0
+            self.current_shields = 0.0
+            return True
+        return False
+
+    def is_destroyed(self) -> bool:
+        return self.destroyed
+
 
 @dataclass
 class Facility(Entity):
     """Represents a constructed facility that gates tech trees."""
 
     facility_type: str
-    name: str
+    name: str = ""
     host_base: Optional[Base] = None
     online: bool = True
+    faction: str = "player"
+    resource_cost: int = field(init=False)
+    build_time: float = field(init=False)
+    armor_value: float = field(init=False)
+    max_health: float = field(init=False)
+    current_health: float = field(init=False)
+    max_shields: float = field(init=False)
+    current_shields: float = field(init=False)
+    _definition: FacilityDefinition | None = field(default=None, init=False, repr=False)
+    _destroyed: bool = field(default=False, init=False, repr=False)
 
     def set_online(self, online: bool) -> None:
         """Toggle operational status; ``World`` informs ``ResearchManager``."""
 
         self.online = online
+
+    def __post_init__(self) -> None:
+        try:
+            self._definition = get_facility_definition(self.facility_type)
+        except KeyError:
+            # TODO: replace fallback stats with canonical guidance once provided.
+            self._definition = FacilityDefinition(
+                facility_type=self.facility_type,
+                display_name=self.name or self.facility_type,
+                resource_cost=0,
+                build_time=0.0,
+                health=10000,
+                shields=6000,
+                armor=120,
+            )
+        definition = self._definition
+        self.resource_cost = definition.resource_cost
+        self.build_time = definition.build_time
+        self.armor_value = float(definition.armor)
+        self.max_health = float(definition.health)
+        self.current_health = self.max_health
+        self.max_shields = float(definition.shields)
+        self.current_shields = self.max_shields
+        if not self.name:
+            self.name = definition.display_name
+        if self.host_base is not None:
+            self.faction = self.host_base.faction
+
+    def apply_damage(self, amount: float) -> bool:
+        """Apply combat damage, returning ``True`` if destroyed."""
+
+        if amount <= 0.0 or self._destroyed:
+            return False
+        if self.current_shields > 0.0:
+            shield_damage = min(amount, self.current_shields)
+            self.current_shields -= shield_damage
+            amount -= shield_damage
+        if amount > 0.0:
+            self.current_health -= amount
+        if self.current_health <= 0.0:
+            self._destroyed = True
+            self.current_health = 0.0
+            self.current_shields = 0.0
+            self.online = False
+            return True
+        return False
+
+    def is_destroyed(self) -> bool:
+        return self._destroyed
+
+    def repair_full(self) -> None:
+        self.current_health = self.max_health
+        self.current_shields = self.max_shields
+        self._destroyed = False
+        self.online = True
+        if self.host_base is not None:
+            self.faction = self.host_base.faction
 
 
 @dataclass
@@ -169,7 +259,7 @@ class Ship(Entity):
     current_energy: float = field(init=False)
     move_target: Optional[Vec2] = None
     arrival_threshold: float = 6.0
-    target: Optional["Ship"] = None
+    target: Optional["CombatTarget"] = None
     _weapon_cooldown: float = 0.0
     max_health: float = field(init=False)
     max_shields: float = field(init=False)
@@ -222,21 +312,18 @@ class Ship(Entity):
 
         self.move_target = target
 
-    def is_enemy(self, other: "Ship") -> bool:
-        return self.faction != other.faction
-
-    def in_firing_range(self, other: "Ship") -> bool:
+    def in_firing_range(self, other: "CombatTarget") -> bool:
         dx = other.position[0] - self.position[0]
         dy = other.position[1] - self.position[1]
         return dx * dx + dy * dy <= self.firing_range * self.firing_range
 
-    def acquire_target(self, candidates: List["Ship"]) -> None:
+    def acquire_target(self, candidates: Sequence["CombatTarget"]) -> None:
         """Pick the closest valid enemy from ``candidates``."""
 
-        best_target: Optional[Ship] = None
+        best_target: Optional[CombatTarget] = None
         best_distance_sq = float("inf")
         for ship in candidates:
-            if not self.is_enemy(ship):
+            if hasattr(ship, "is_destroyed") and ship.is_destroyed():
                 continue
             dx = ship.position[0] - self.position[0]
             dy = ship.position[1] - self.position[1]
@@ -357,3 +444,6 @@ class Ship(Entity):
         return min(new_max, ratio * new_max)
 
     # TODO: Combat stances, AI hooks, aura tracking, etc.
+
+
+CombatTarget = Union["Ship", Base, Facility]

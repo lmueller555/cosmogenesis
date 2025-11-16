@@ -208,7 +208,9 @@ class WireframeRenderer:
 
     def _facility_color(self, world: World, facility: Facility) -> Tuple[float, float, float, float]:
         base = facility.host_base
-        faction = base.faction if base is not None else world.player_faction
+        faction = facility.faction
+        if base is not None:
+            faction = base.faction
         if faction != world.player_faction:
             return self.enemy_color
         if not facility.online:

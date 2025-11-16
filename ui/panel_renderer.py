@@ -806,7 +806,8 @@ class UIPanelRenderer:
             display_name = facility.name or world.facility_display_name(facility.facility_type)
             state = "Online" if facility.online else "Offline"
             color = self._text_color if facility.online else self._muted_text
-            self._draw_text(cursor_x, cursor_y, f"{display_name}: {state}", color)
+            hp_line = f"{facility.current_health:.0f}/{facility.max_health:.0f} HP"
+            self._draw_text(cursor_x, cursor_y, f"{display_name}: {state} ({hp_line})", color)
             cursor_y += 20
         return cursor_y
 
