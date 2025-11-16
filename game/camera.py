@@ -27,3 +27,8 @@ class Camera2D:
         """Convert a world position into screen space."""
         width, height = self.viewport_size
         return (world_pos[0] - self.position[0] + width / 2, world_pos[1] - self.position[1] + height / 2)
+
+    def screen_to_world(self, screen_pos: Vec2) -> Vec2:
+        """Convert a screen coordinate back into world space."""
+        width, height = self.viewport_size
+        return (screen_pos[0] + self.position[0] - width / 2, screen_pos[1] + self.position[1] - height / 2)
