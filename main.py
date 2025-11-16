@@ -26,13 +26,13 @@ from ui.panel_renderer import UIPanelRenderer
 def handle_camera_input(camera: Camera3D, dt: float) -> None:
     keys = pygame.key.get_pressed()
     direction = [0.0, 0.0]
-    if keys[pygame.K_w] or keys[pygame.K_UP]:
+    if keys[pygame.K_UP]:
         direction[1] += 1.0
-    if keys[pygame.K_s] or keys[pygame.K_DOWN]:
+    if keys[pygame.K_DOWN]:
         direction[1] -= 1.0
-    if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
+    if keys[pygame.K_RIGHT]:
         direction[0] += 1.0
-    if keys[pygame.K_a] or keys[pygame.K_LEFT]:
+    if keys[pygame.K_LEFT]:
         direction[0] -= 1.0
 
     magnitude = math.hypot(direction[0], direction[1])
