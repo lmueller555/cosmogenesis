@@ -97,18 +97,22 @@ def run() -> None:
                 layout.update(window_size)
                 camera.update_viewport(layout.gameplay_rect.size)
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if layout.is_in_gameplay(event.pos):
-                    clamped = layout.clamp_to_gameplay(event.pos)
-                    if event.button == 1:
+                if event.button == 1:
+                    if layout.is_in_gameplay(event.pos):
+                        clamped = layout.clamp_to_gameplay(event.pos)
                         selection_drag.begin(clamped)
-                    elif event.button == 3:
+                    elif layout.is_in_minimap(event.pos):
+                        world_target = _minimap_to_world(world, layout, event.pos)
+                        camera.recenter_on(world_target)
+                    elif layout.context_rect.collidepoint(event.pos):
+                        ui_renderer.handle_mouse_click(world, layout, event.pos)
+                elif event.button == 3:
+                    if layout.is_in_gameplay(event.pos):
+                        clamped = layout.clamp_to_gameplay(event.pos)
                         world_pos = camera.screen_to_world(clamped)
                         world.issue_move_order(_clamp_to_world(world, world_pos))
-                elif layout.is_in_minimap(event.pos):
-                    world_target = _minimap_to_world(world, layout, event.pos)
-                    if event.button == 1:
-                        camera.recenter_on(world_target)
-                    elif event.button == 3:
+                    elif layout.is_in_minimap(event.pos):
+                        world_target = _minimap_to_world(world, layout, event.pos)
                         world.issue_move_order(world_target)
             elif event.type == pygame.MOUSEWHEEL:
                 camera.zoom(event.y)
