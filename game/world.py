@@ -898,7 +898,7 @@ def create_initial_world() -> World:
     world._apply_base_research(base)
 
     worker_def = get_ship_definition("Skimmer Drone")
-    for idx in range(3):
+    for idx in range(6):
         spawn_pos = _spawn_ring_position(base.position, idx, radius=140.0)
         worker = Ship(position=spawn_pos, definition=worker_def)
         world._apply_ship_research(worker)

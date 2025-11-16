@@ -450,8 +450,8 @@ def _utility_definitions() -> Dict[str, ShipDefinition]:
                 "Thruster refits to speed up hauling runs.",
                 "Sensor tethers that warn of ambushes.",
             ],
-            worker_carry_capacity=6.0,
-            worker_mining_time=2.5,
+            worker_carry_capacity=10.0,
+            worker_mining_time=5.0,
         ),
     }
 
