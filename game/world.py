@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from .ai import EnemyAIController
-from .entities import Asteroid, Base, Facility, Planetoid, Ship
+from .entities import Asteroid, Base, Facility, Planetoid, Ship, WorkerAssignment
 from .ship_registry import (
     ShipDefinition,
     all_ship_definitions,
@@ -95,10 +95,9 @@ class World:
     def update(self, dt: float) -> None:
         """Advance simulation forward by ``dt`` seconds."""
 
-        income_per_second = self._resource_income_per_second()
-        self.resource_income_rate = income_per_second
-        if income_per_second > 0.0 and dt > 0.0:
-            self.resources += income_per_second * dt
+        passive_rate = self._resource_income_per_second()
+        passive_income = passive_rate * dt if dt > 0.0 else 0.0
+        total_income = passive_income
 
         if self.enemy_ai is not None:
             self.enemy_ai.update(dt)
@@ -106,6 +105,20 @@ class World:
         for ship in self.ships:
             ship.update(dt)
             ship.tick_weapon_cooldown(dt)
+
+        worker_income = self._update_worker_behaviors(dt)
+        total_income += worker_income
+        self.resources += total_income
+        if dt > 0.0:
+            instantaneous_rate = total_income / dt
+            if self.resource_income_rate <= 0.0:
+                self.resource_income_rate = instantaneous_rate
+            else:
+                self.resource_income_rate = (
+                    0.8 * self.resource_income_rate + 0.2 * instantaneous_rate
+                )
+        else:
+            self.resource_income_rate = 0.0
 
         for base in self.bases:
             completed = base.update(dt)
@@ -295,6 +308,8 @@ class World:
         ship = Ship(position=spawn_pos, definition=ship_definition, faction=base.faction)
         # TODO: hook into fleet organization / command auras once implemented.
         self._apply_ship_research(ship)
+        if ship.is_worker:
+            self._configure_worker(ship, base)
         self.ships.append(ship)
 
     def _update_combat(self, dt: float) -> None:
@@ -308,6 +323,8 @@ class World:
                 continue
             if not ship.is_enemy(ship.target):
                 ship.clear_target()
+                continue
+            if ship.weapon_damage_value <= 0.0:
                 continue
             if ship.can_fire():
                 target = ship.target
@@ -364,6 +381,105 @@ class World:
             if not beam.expired():
                 active.append(beam)
         self.beam_visuals = active
+
+    def _update_worker_behaviors(self, dt: float) -> float:
+        if not self.ships:
+            return 0.0
+        total_income = 0.0
+        for ship in self.ships:
+            assignment = ship.worker_assignment
+            if assignment is None:
+                continue
+            base = assignment.home_base
+            if base not in self.bases:
+                continue
+            target = assignment.resource_target
+            if getattr(target, "controller", ship.faction) != ship.faction:
+                assignment.state = "waiting"
+                ship.set_move_target(None)
+                continue
+            if assignment.state == "waiting":
+                assignment.state = "travel_to_node"
+                ship.set_move_target(target.position)
+            if assignment.state == "travel_to_node":
+                if ship.move_target is None:
+                    assignment.state = "mining"
+                    assignment.mining_timer = max(0.0, assignment.mining_duration)
+                continue
+            if assignment.state == "mining":
+                if assignment.mining_duration <= 0.0:
+                    assignment.state = "travel_to_base"
+                    assignment.cargo = 0.0
+                    ship.set_move_target(base.position)
+                    continue
+                assignment.mining_timer = max(0.0, assignment.mining_timer - dt)
+                if assignment.mining_timer <= 0.0:
+                    assignment.state = "travel_to_base"
+                    assignment.cargo = self._worker_cargo_amount(ship, assignment)
+                    ship.set_move_target(base.position)
+                continue
+            if assignment.state == "travel_to_base":
+                if ship.move_target is None:
+                    assignment.state = "depositing"
+                continue
+            if assignment.state == "depositing":
+                delivered = assignment.cargo
+                if delivered > 0.0:
+                    total_income += delivered
+                assignment.cargo = 0.0
+                assignment.state = "travel_to_node"
+                ship.set_move_target(target.position)
+        return total_income
+
+    def _worker_cargo_amount(self, ship: Ship, assignment: WorkerAssignment) -> float:
+        target = assignment.resource_target
+        base_rate = getattr(target, "resource_yield", 0.0) / 60.0
+        harvest = base_rate * max(0.0, assignment.mining_duration)
+        capacity = ship.definition.worker_carry_capacity
+        if capacity > 0.0:
+            harvest = min(harvest, capacity)
+        return max(0.0, harvest)
+
+    def _configure_worker(
+        self,
+        ship: Ship,
+        base: Base,
+        resource_target: Planetoid | Asteroid | None = None,
+    ) -> None:
+        if not ship.is_worker:
+            return
+        target = resource_target or self._default_worker_target(base)
+        if target is None:
+            return
+        assignment = WorkerAssignment(
+            home_base=base,
+            resource_target=target,
+            state="travel_to_node",
+            mining_duration=max(0.1, ship.definition.worker_mining_time),
+        )
+        ship.worker_assignment = assignment
+        ship.set_move_target(target.position)
+
+    def _default_worker_target(self, base: Base) -> Planetoid | Asteroid | None:
+        owned_planetoids = [
+            node for node in self.planetoids if node.controller == base.faction
+        ]
+        if owned_planetoids:
+            return min(
+                owned_planetoids,
+                key=lambda node: (node.position[0] - base.position[0]) ** 2
+                + (node.position[1] - base.position[1]) ** 2,
+            )
+        owned_asteroids = [
+            node for node in self.asteroids if node.controller == base.faction
+        ]
+        if owned_asteroids:
+            return min(
+                owned_asteroids,
+                key=lambda node: (node.position[0] - base.position[0]) ** 2
+                + (node.position[1] - base.position[1]) ** 2,
+            )
+        return None
 
     def _sync_facility_type(self, facility_type: str) -> None:
         """Push current online/offline state for ``facility_type`` to research."""
@@ -429,29 +545,9 @@ class World:
         return True
 
     def _resource_income_per_second(self) -> float:
-        """Compute the passive resource income for the current tick."""
+        """Passive income is disabled; workers ferry resources instead."""
 
-        planetoid_income = 0.0
-        for planetoid in self.planetoids_controlled_by(self.player_faction):
-            planetoid_income += planetoid.resource_yield / 60.0
-
-        asteroid_income = 0.0
-        for asteroid in self.asteroids_controlled_by(self.player_faction):
-            asteroid_income += asteroid.resource_yield / 60.0
-
-        if planetoid_income <= 0.0 and asteroid_income <= 0.0:
-            return 0.0
-
-        planetoid_bonus = self.research_manager.economy_bonus(
-            target="planetoid_income", attribute="resource_rate"
-        )
-        asteroid_bonus = self.research_manager.economy_bonus(
-            target="asteroid_income", attribute="resource_rate"
-        )
-
-        total_planetoids = planetoid_income * (1.0 + planetoid_bonus)
-        total_asteroids = asteroid_income * (1.0 + asteroid_bonus)
-        return total_planetoids + total_asteroids
+        return 0.0
 
     def refresh_visibility(self) -> None:
         """Rebuild fog-of-war state based on friendly sensors."""
@@ -533,9 +629,17 @@ def create_initial_world() -> World:
         world.asteroids.append(asteroid)
         world.set_asteroid_controller(asteroid, world.player_faction)
 
-    base = Base(position=(160.0, 0.0))
+    base = Base(position=(260.0, 0.0))
     world.bases.append(base)
     world._apply_base_research(base)
+
+    worker_def = get_ship_definition("Skimmer Drone")
+    for idx in range(3):
+        spawn_pos = _spawn_ring_position(base.position, idx, radius=140.0)
+        worker = Ship(position=spawn_pos, definition=worker_def)
+        world._apply_ship_research(worker)
+        world._configure_worker(worker, base, resource_target=planetoid)
+        world.ships.append(worker)
 
     # Stub in Shipwright Foundry + Fleet Forge attached to the Astral Citadel.
     shipwright_def = get_facility_definition("ShipwrightFoundry")

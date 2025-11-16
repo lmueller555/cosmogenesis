@@ -949,6 +949,6 @@ class UIPanelRenderer:
 
     @staticmethod
     def _ship_class_order(ship_class: str) -> int:
-        order = {"Strike": 0, "Escort": 1, "Line": 2, "Capital": 3}
+        order = {"Utility": -1, "Strike": 0, "Escort": 1, "Line": 2, "Capital": 3}
         return order.get(ship_class, 99)
 

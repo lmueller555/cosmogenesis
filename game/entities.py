@@ -200,6 +200,18 @@ class Facility(Entity):
 
 
 @dataclass
+class WorkerAssignment:
+    """Tracks autonomous worker behavior for civilian ships."""
+
+    home_base: Base
+    resource_target: Planetoid | Asteroid
+    state: str = "travel_to_node"
+    mining_duration: float = 0.0
+    mining_timer: float = 0.0
+    cargo: float = 0.0
+
+
+@dataclass
 class Ship(Entity):
     """Runtime instance of a ship hull from `ship_guidance`."""
 
@@ -222,6 +234,7 @@ class Ship(Entity):
     _visual_range: float = field(init=False)
     _radar_range: float = field(init=False)
     _firing_range: float = field(init=False)
+    worker_assignment: Optional[WorkerAssignment] = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.max_health = float(self.definition.health)
@@ -245,6 +258,10 @@ class Ship(Entity):
     @property
     def ship_class(self) -> str:
         return self.definition.ship_class
+
+    @property
+    def is_worker(self) -> bool:
+        return self.definition.is_worker
 
     @property
     def visual_range(self) -> float:
