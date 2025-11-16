@@ -7,6 +7,8 @@ from typing import Deque, Iterable, List, Optional
 
 from .ship_registry import ShipDefinition, get_ship_definition
 
+MAX_SHIP_QUEUE = 10
+
 
 @dataclass
 class ProductionJob:
@@ -19,19 +21,33 @@ class ProductionJob:
 class ProductionQueue:
     """Simple FIFO production queue that tracks an active build."""
 
-    def __init__(self) -> None:
+    def __init__(self, max_jobs: int = MAX_SHIP_QUEUE) -> None:
         self._pending: Deque[ProductionJob] = deque()
         self._active: Optional[ProductionJob] = None
+        self.max_jobs = max_jobs
 
     def queue_ship(self, ship_name: str) -> ProductionJob:
         """Append a ship build using canonical stats from `ship_guidance`."""
 
+        if self.queue_full():
+            raise ValueError("Production queue is full")
         definition = get_ship_definition(ship_name)
         job = ProductionJob(ship_definition=definition, remaining_time=definition.build_time)
         self._pending.append(job)
         if self._active is None:
             self._start_next_job()
         return job
+
+    def job_count(self) -> int:
+        """Return the total number of active + queued jobs."""
+
+        active = 1 if self._active is not None else 0
+        return active + len(self._pending)
+
+    def queue_full(self) -> bool:
+        """Return ``True`` when the queue reached ``max_jobs``."""
+
+        return self.job_count() >= self.max_jobs
 
     def _start_next_job(self) -> None:
         if self._active is None and self._pending:

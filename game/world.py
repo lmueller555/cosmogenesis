@@ -155,11 +155,17 @@ class World:
         except KeyError:
             return False
 
+        if base.production.queue_full():
+            return False
+
         allowed, _ = self.ship_production_status(base, definition)
         if not allowed:
             return False
 
-        base.queue_ship(ship_name)
+        try:
+            base.queue_ship(ship_name)
+        except ValueError:
+            return False
         self.resources -= definition.resource_cost
         return True
 
@@ -271,6 +277,9 @@ class World:
             if shortfall > 0:
                 return False, f"Need {shortfall:,} resources"
             return False, "Insufficient resources"
+
+        if base.production.queue_full():
+            return False, f"Queue full ({base.production.max_jobs})"
 
         return True, None
 
