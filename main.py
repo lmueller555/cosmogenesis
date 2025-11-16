@@ -31,9 +31,9 @@ def handle_camera_input(camera: Camera3D, dt: float) -> None:
     if keys[pygame.K_DOWN]:
         direction[1] -= 1.0
     if keys[pygame.K_RIGHT]:
-        direction[0] += 1.0
-    if keys[pygame.K_LEFT]:
         direction[0] -= 1.0
+    if keys[pygame.K_LEFT]:
+        direction[0] += 1.0
 
     magnitude = math.hypot(direction[0], direction[1])
     if magnitude > 0.0:
