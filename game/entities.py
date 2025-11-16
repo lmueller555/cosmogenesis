@@ -22,8 +22,19 @@ class Entity:
 class Planetoid(Entity):
     radius: float = 80.0
     resource_yield: int = 100
+    controller: str = "neutral"
 
     # TODO: integrate resource extraction logic per `game_guidance`.
+
+    def controlled_by(self, faction: str) -> bool:
+        """Return ``True`` if this planetoid currently belongs to ``faction``."""
+
+        return self.controller == faction
+
+    def set_controller(self, faction: str) -> None:
+        """Transfer ownership to ``faction`` (no combat logic yet)."""
+
+        self.controller = faction
 
 
 @dataclass
