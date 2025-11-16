@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, List, Tuple
 
+import math
 import pygame
 from OpenGL import GL as gl
 
@@ -50,6 +51,11 @@ class UIPanelRenderer:
         self._minimap_bg = (0.02, 0.02, 0.03, 1.0)
         self._fog_unexplored = (0.0, 0.0, 0.0, 0.8)
         self._fog_hidden = (0.03, 0.03, 0.05, 0.55)
+        self._planetoid_colors = {
+            "player": (0.3, 0.8, 1.0, 0.9),
+            "enemy": (1.0, 0.35, 0.35, 0.9),
+            "neutral": (0.7, 0.7, 0.7, 0.85),
+        }
         self._research_buttons: List[ResearchButton] = []
         self._production_buttons: List[ProductionButton] = []
 
@@ -375,6 +381,12 @@ class UIPanelRenderer:
 
         self._draw_fog_overlay(world, rect, bounds)
 
+        for planetoid in world.planetoids:
+            center = self._world_to_minimap(planetoid.position, rect, bounds)
+            radius = self._planetoid_radius(planetoid.radius, rect, bounds)
+            color = self._planetoid_color(planetoid.controller)
+            self._draw_minimap_planetoid(center, radius, color)
+
         for ship in world.ships:
             color = self._friendly_color
             if ship.faction != "player":
@@ -501,6 +513,43 @@ class UIPanelRenderer:
         x = rect.left + normalized_x * rect.width
         y = rect.bottom - normalized_y * rect.height
         return (x, y)
+
+    def _planetoid_color(self, controller: str) -> Tuple[float, float, float, float]:
+        if controller == "player":
+            return self._planetoid_colors["player"]
+        if controller == "enemy":
+            return self._planetoid_colors["enemy"]
+        return self._planetoid_colors["neutral"]
+
+    def _planetoid_radius(
+        self, world_radius: float, rect: pygame.Rect, bounds: Tuple[float, float, float, float]
+    ) -> float:
+        min_x, max_x, min_y, max_y = bounds
+        world_width = max_x - min_x
+        world_height = max_y - min_y
+        if world_width <= 0 or world_height <= 0:
+            return 4.0
+        radius_x = (world_radius / world_width) * rect.width
+        radius_y = (world_radius / world_height) * rect.height
+        radius = max(3.0, min(radius_x, radius_y))
+        return radius
+
+    def _draw_minimap_planetoid(
+        self,
+        center: Vec2,
+        radius: float,
+        color: Tuple[float, float, float, float],
+        segments: int = 20,
+    ) -> None:
+        gl.glColor4f(*color)
+        gl.glBegin(gl.GL_TRIANGLE_FAN)
+        gl.glVertex2f(center[0], center[1])
+        for i in range(segments + 1):
+            angle = (i / segments) * 2.0 * 3.14159265
+            x = center[0] + radius * math.cos(angle)
+            y = center[1] + radius * math.sin(angle)
+            gl.glVertex2f(x, y)
+        gl.glEnd()
 
     def _draw_research_button(
         self,
