@@ -74,6 +74,15 @@ class ResearchProgressSnapshot:
         return max(0.0, min(1.0, completed))
 
 
+@dataclass(frozen=True)
+class ResearchAvailability:
+    """Describes whether a node may start right now and, if not, why."""
+
+    node: ResearchNode
+    can_start: bool
+    blocked_reason: Optional[str] = None
+
+
 class ResearchManager:
     """Runtime controller for research availability, progress, and facilities."""
 
@@ -274,6 +283,70 @@ class ResearchManager:
                 continue
             bonus_amount += bonus.amount
         return bonus_amount
+
+    # ------------------------------------------------------------------
+    # Availability helpers for UI/AI
+    # ------------------------------------------------------------------
+    def node_availability(self, node_id: str, *, available_resources: float) -> ResearchAvailability:
+        """Return a structured availability summary for ``node_id``."""
+
+        if node_id not in self._nodes:
+            raise KeyError(f"Unknown research node: {node_id}")
+        node = self._nodes[node_id]
+
+        if node_id in self._completed:
+            return ResearchAvailability(node=node, can_start=False, blocked_reason="Completed")
+
+        if self._active is not None and self._active.node_id == node_id:
+            return ResearchAvailability(node=node, can_start=False, blocked_reason="In progress")
+
+        if not self.facility_online(node.host_facility_type):
+            facility_name = node.host_facility_type
+            return ResearchAvailability(
+                node=node,
+                can_start=False,
+                blocked_reason=f"{facility_name} offline",
+            )
+
+        missing_prereqs = [
+            self._nodes[req].name for req in node.prerequisites if req not in self._completed
+        ]
+        if missing_prereqs:
+            prereq_text = ", ".join(missing_prereqs)
+            return ResearchAvailability(
+                node=node,
+                can_start=False,
+                blocked_reason=f"Requires {prereq_text}",
+            )
+
+        if available_resources < node.resource_cost:
+            shortfall = int(node.resource_cost - available_resources)
+            return ResearchAvailability(
+                node=node,
+                can_start=False,
+                blocked_reason=f"Need {shortfall:,} more resources",
+            )
+
+        if self._active is not None:
+            active_node = self._nodes[self._active.node_id]
+            return ResearchAvailability(
+                node=node,
+                can_start=False,
+                blocked_reason=f"Finish {active_node.name} first",
+            )
+
+        return ResearchAvailability(node=node, can_start=True)
+
+    def pending_nodes(self, *, available_resources: float) -> List[ResearchAvailability]:
+        """Return availability data for every incomplete node."""
+
+        states: List[ResearchAvailability] = []
+        for node in self._nodes.values():
+            if node.id in self._completed:
+                continue
+            states.append(self.node_availability(node.id, available_resources=available_resources))
+        states.sort(key=lambda availability: (availability.node.tier, availability.node.name))
+        return states
 
 
 # ----------------------------------------------------------------------

@@ -11,7 +11,7 @@ from .ship_registry import (
     all_ship_definitions,
     get_ship_definition,
 )
-from .research import ResearchManager, ResearchNode
+from .research import ResearchAvailability, ResearchManager, ResearchNode
 
 Vec2 = Tuple[float, float]
 
@@ -112,6 +112,11 @@ class World:
         """Expose nodes currently available for UI / debugging."""
 
         return self.research_manager.available_nodes(available_resources=self.resources)
+
+    def research_statuses(self) -> List[ResearchAvailability]:
+        """Expose availability summaries for each pending node."""
+
+        return self.research_manager.pending_nodes(available_resources=self.resources)
 
     def _node(self, node_id: str) -> Optional[ResearchNode]:
         for node in self.research_manager.nodes():

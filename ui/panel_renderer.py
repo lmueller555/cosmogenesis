@@ -9,7 +9,7 @@ from OpenGL import GL as gl
 
 from game.camera import Camera3D
 from game.entities import Ship
-from game.research import ResearchNode
+from game.research import ResearchAvailability, ResearchNode
 from game.world import World
 from game.ship_registry import ShipDefinition
 from .layout import UILayout
@@ -227,33 +227,64 @@ class UIPanelRenderer:
             self._draw_text(cursor_x, cursor_y, progress_line, self._muted_text)
             cursor_y += 28
 
-        available = sorted(
-            world.available_research(), key=lambda node: (node.tier, node.name)
-        )
-        if not available:
+        availabilities: List[ResearchAvailability] = world.research_statuses()
+        if not availabilities:
             idle_message = (
-                "Research in progress." if progress_snapshot is not None else "No projects available."
+                "All projects complete." if progress_snapshot is None else "Research in progress."
             )
             self._draw_text(cursor_x, cursor_y, idle_message, self._muted_text)
             cursor_y += 22
-            self._draw_text(
-                cursor_x,
-                cursor_y,
-                "Check facilities, prerequisites, or resources.",
-                self._muted_text,
-            )
-            cursor_y += 32
             return cursor_y
 
-        self._draw_text(cursor_x, cursor_y, "Available Projects", self._context_text)
-        cursor_y += 24
+        ready = [entry for entry in availabilities if entry.can_start]
+        locked = [entry for entry in availabilities if not entry.can_start]
 
-        for node in available:
-            height = 68
-            button_rect = pygame.Rect(rect.left + 8, int(cursor_y), rect.width - 16, height)
-            self._draw_research_button(button_rect, node)
-            self._research_buttons.append(ResearchButton(node_id=node.id, rect=button_rect))
-            cursor_y += height + 8
+        if ready:
+            self._draw_text(cursor_x, cursor_y, "Available Projects", self._context_text)
+            cursor_y += 24
+            for entry in ready:
+                height = 88
+                button_rect = pygame.Rect(rect.left + 8, int(cursor_y), rect.width - 16, height)
+                self._draw_research_button(
+                    button_rect,
+                    entry.node,
+                    enabled=True,
+                    status_line="Ready to start",
+                )
+                self._research_buttons.append(
+                    ResearchButton(node_id=entry.node.id, rect=button_rect, enabled=True)
+                )
+                cursor_y += height + 8
+        else:
+            idle_message = (
+                "Research in progress." if progress_snapshot is not None else "No projects can start yet."
+            )
+            self._draw_text(cursor_x, cursor_y, idle_message, self._muted_text)
+            cursor_y += 22
+
+        if locked:
+            cursor_y += 12
+            self._draw_text(cursor_x, cursor_y, "Locked Projects", self._context_text)
+            cursor_y += 24
+            for entry in locked:
+                height = 88
+                button_rect = pygame.Rect(rect.left + 8, int(cursor_y), rect.width - 16, height)
+                status_line = entry.blocked_reason or "Unavailable"
+                self._draw_research_button(
+                    button_rect,
+                    entry.node,
+                    enabled=False,
+                    status_line=status_line,
+                )
+                self._research_buttons.append(
+                    ResearchButton(
+                        node_id=entry.node.id,
+                        rect=button_rect,
+                        enabled=False,
+                    )
+                )
+                cursor_y += height + 8
+
         return cursor_y
 
     def _draw_construction_section(
@@ -409,9 +440,24 @@ class UIPanelRenderer:
         y = rect.bottom - normalized_y * rect.height
         return (x, y)
 
-    def _draw_research_button(self, rect: pygame.Rect, node: ResearchNode) -> None:
-        bg = (0.10, 0.14, 0.21, 0.95)
-        border = (0.32, 0.45, 0.65, 1.0)
+    def _draw_research_button(
+        self,
+        rect: pygame.Rect,
+        node: ResearchNode,
+        *,
+        enabled: bool,
+        status_line: str | None = None,
+    ) -> None:
+        if enabled:
+            bg = (0.10, 0.14, 0.21, 0.95)
+            border = (0.32, 0.45, 0.65, 1.0)
+            title_color = self._text_color
+            detail_color = self._context_text
+        else:
+            bg = (0.07, 0.09, 0.12, 0.8)
+            border = (0.18, 0.22, 0.30, 1.0)
+            title_color = self._muted_text
+            detail_color = self._muted_text
         self._draw_rect(rect, bg)
         self._draw_rect_outline(rect, border)
 
@@ -421,9 +467,12 @@ class UIPanelRenderer:
         cost_line = f"Cost {node.resource_cost:,} | {node.research_time:.0f}s"
         detail_line = self._node_detail_line(node)
 
-        self._draw_text(text_x, text_y, name_line, self._text_color)
+        self._draw_text(text_x, text_y, name_line, title_color)
         self._draw_text(text_x, text_y + 20, cost_line, self._muted_text)
-        self._draw_text(text_x, text_y + 40, detail_line, self._context_text)
+        self._draw_text(text_x, text_y + 40, detail_line, detail_color)
+        if status_line:
+            line_color = detail_color if not enabled else self._context_text
+            self._draw_text(text_x, text_y + 60, status_line, line_color)
 
     def _node_detail_line(self, node: ResearchNode) -> str:
         if node.unlocks_ships:
