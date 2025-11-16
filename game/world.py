@@ -496,15 +496,15 @@ def create_initial_world() -> World:
     # Stub in Shipwright Foundry + Fleet Forge attached to the Astral Citadel.
     shipwright_def = get_facility_definition("ShipwrightFoundry")
     fleet_forge_def = get_facility_definition("FleetForge")
+    research_nexus_def = get_facility_definition("ResearchNexus")
     shipwright = Facility(
         position=world._facility_slot_position(base, world._next_facility_slot(base)),
         definition=shipwright_def,
         host_base=base,
     )
     research_nexus = Facility(
-        position=base.position,
-        facility_type="ResearchNexus",
-        name="Research Nexus",
+        position=world._facility_slot_position(base, world._next_facility_slot(base)),
+        definition=research_nexus_def,
         host_base=base,
     )
     world.add_facility(shipwright)
