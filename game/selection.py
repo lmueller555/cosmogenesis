@@ -1,4 +1,4 @@
-"""Helpers for selecting ships in the world."""
+"""Selection helpers for Cosmogenesis RTS controls."""
 from __future__ import annotations
 
 from dataclasses import dataclass
