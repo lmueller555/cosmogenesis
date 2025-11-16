@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import math
-from typing import Tuple
 
 import pygame
 
@@ -16,9 +15,6 @@ from game.selection import (
 from game.world import create_initial_world
 from rendering.draw_system import WireframeRenderer
 from rendering.opengl_context import initialize_gl, resize_viewport
-
-WINDOW_SIZE: Tuple[int, int] = (1280, 720)
-
 
 def handle_camera_input(camera: Camera2D, dt: float) -> None:
     keys = pygame.key.get_pressed()
@@ -42,12 +38,15 @@ def handle_camera_input(camera: Camera2D, dt: float) -> None:
 def run() -> None:
     pygame.init()
     pygame.display.set_caption("Cosmogenesis Prototype")
-    pygame.display.set_mode(WINDOW_SIZE, pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE)
+    pygame.display.set_mode(
+        (0, 0), pygame.OPENGL | pygame.DOUBLEBUF | pygame.FULLSCREEN
+    )
+    window_size = pygame.display.get_surface().get_size()
 
-    initialize_gl(WINDOW_SIZE)
+    initialize_gl(window_size)
 
     world = create_initial_world()
-    camera = Camera2D(position=(0.0, 0.0), viewport_size=WINDOW_SIZE)
+    camera = Camera2D(position=(0.0, 0.0), viewport_size=window_size)
     renderer = WireframeRenderer()
     selection_drag = SelectionDragState()
 
