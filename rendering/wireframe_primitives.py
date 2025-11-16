@@ -107,6 +107,40 @@ def create_planetoid_mesh(radius: float = 60.0, segments: int = 24) -> Wireframe
     return WireframeMesh(vertices, lines)
 
 
+def create_asteroid_mesh(radius: float = 24.0) -> WireframeMesh:
+    """Construct a chunky irregular rock silhouette for asteroid fields."""
+
+    vertices: List[Vec3] = [
+        (-0.6 * radius, -0.2 * radius, -0.5 * radius),
+        (-0.2 * radius, 0.4 * radius, -0.4 * radius),
+        (0.5 * radius, 0.2 * radius, -0.3 * radius),
+        (0.3 * radius, -0.5 * radius, -0.6 * radius),
+        (-0.4 * radius, -0.3 * radius, 0.4 * radius),
+        (-0.1 * radius, 0.5 * radius, 0.5 * radius),
+        (0.4 * radius, 0.3 * radius, 0.4 * radius),
+        (0.2 * radius, -0.4 * radius, 0.6 * radius),
+    ]
+
+    segments: List[Tuple[int, int]] = [
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 0),
+        (4, 5),
+        (5, 6),
+        (6, 7),
+        (7, 4),
+        (0, 4),
+        (1, 5),
+        (2, 6),
+        (3, 7),
+        (0, 5),
+        (2, 7),
+    ]
+
+    return WireframeMesh(vertices, segments)
+
+
 def create_astral_citadel_mesh() -> WireframeMesh:
     """Construct a low-poly representation of the Astral Citadel base."""
     vertices: List[Vec2] = []

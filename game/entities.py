@@ -38,6 +38,21 @@ class Planetoid(Entity):
 
 
 @dataclass
+class Asteroid(Entity):
+    """Smaller resource nodes that supplement planetoid income."""
+
+    radius: float = 28.0
+    resource_yield: int = 40  # Resources per minute, mirroring planetoid semantics.
+    controller: str = "neutral"
+
+    def controlled_by(self, faction: str) -> bool:
+        return self.controller == faction
+
+    def set_controller(self, faction: str) -> None:
+        self.controller = faction
+
+
+@dataclass
 class Base(Entity):
     name: str = "Astral Citadel"
     resource_cost: str = "N/A"
