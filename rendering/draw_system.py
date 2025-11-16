@@ -1,7 +1,7 @@
 """Wireframe renderer for Cosmogenesis entities."""
 from __future__ import annotations
 
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 from OpenGL import GL as gl
 
@@ -49,7 +49,13 @@ class WireframeRenderer:
         }
         self.selection_color: Tuple[float, float, float, float] = (1.0, 0.82, 0.26, 1.0)
 
-    def draw_world(self, world: World, camera: Camera2D) -> None:
+    def draw_world(
+        self,
+        world: World,
+        camera: Camera2D,
+        *,
+        selection_box: Optional[Tuple[Tuple[float, float], Tuple[float, float]]] = None,
+    ) -> None:
         gl.glClear(gl.GL_COLOR_BUFFER_BIT)
 
         for planetoid in world.planetoids:
@@ -67,6 +73,9 @@ class WireframeRenderer:
             scale = self._ship_scale_for(ship.definition.ship_class)
             color = self.selection_color if ship in world.selected_ships else LINE_COLOR
             self._draw_mesh(mesh, ship.position, scale, camera, color=color)
+
+        if selection_box is not None:
+            self._draw_screen_rect(selection_box[0], selection_box[1])
 
     def _draw_mesh(
         self,
@@ -106,3 +115,21 @@ class WireframeRenderer:
         if ship_class == "Capital":
             return 1.6
         return 1.0
+
+    def _draw_screen_rect(
+        self,
+        corner_a: Tuple[float, float],
+        corner_b: Tuple[float, float],
+    ) -> None:
+        min_x = min(corner_a[0], corner_b[0])
+        max_x = max(corner_a[0], corner_b[0])
+        min_y = min(corner_a[1], corner_b[1])
+        max_y = max(corner_a[1], corner_b[1])
+
+        gl.glColor4f(*self.selection_color)
+        gl.glBegin(gl.GL_LINE_LOOP)
+        gl.glVertex2f(min_x, min_y)
+        gl.glVertex2f(max_x, min_y)
+        gl.glVertex2f(max_x, max_y)
+        gl.glVertex2f(min_x, max_y)
+        gl.glEnd()
