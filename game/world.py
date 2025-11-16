@@ -135,11 +135,11 @@ class World:
 
         self.refresh_visibility()
 
-    def issue_move_order(self, destination: Vec2) -> None:
+    def issue_move_order(self, destination: Vec2, *, behavior: str = "move") -> None:
         """Send every selected ship toward ``destination``."""
 
         for ship in self.selected_ships:
-            ship.set_move_target(destination)
+            ship.set_move_target(destination, behavior=behavior)
 
     def queue_ship(self, base: Base, ship_name: str) -> bool:
         """Queue ``ship_name`` at ``base`` if research + resources allow it."""
@@ -320,12 +320,22 @@ class World:
             if ship.target is None or ship.target not in self.ships or not ship.in_firing_range(ship.target):
                 ship.acquire_target(self.ships)
             if ship.target is None:
+                ship.hold_position_for_attack(False)
                 continue
             if not ship.is_enemy(ship.target):
                 ship.clear_target()
+                ship.hold_position_for_attack(False)
                 continue
             if ship.weapon_damage_value <= 0.0:
+                ship.hold_position_for_attack(False)
                 continue
+            engaged = (
+                ship.move_behavior == "attack"
+                and ship.move_target is not None
+                and ship.target is not None
+                and ship.in_firing_range(ship.target)
+            )
+            ship.hold_position_for_attack(engaged)
             if ship.can_fire():
                 target = ship.target
                 damage = ship.deal_damage()

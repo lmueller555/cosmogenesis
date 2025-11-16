@@ -117,6 +117,8 @@ class WireframeRenderer:
         self._tooltip_bg = (0.08, 0.09, 0.12, 0.92)
         self._tooltip_border = (0.35, 0.42, 0.58, 1.0)
         self._current_viewport_size: Tuple[int, int] = (0, 0)
+        self._move_waypoint_color: Tuple[float, float, float, float] = (0.25, 0.9, 0.45, 0.95)
+        self._attack_waypoint_color: Tuple[float, float, float, float] = (0.95, 0.32, 0.32, 0.95)
 
     def draw_world(
         self,
@@ -368,8 +370,64 @@ class WireframeRenderer:
             self._draw_ship_status_bars(world, camera)
             self._draw_base_progress_bars(world, camera)
             self._draw_selected_base_spawn_ui(world, camera)
+            self._draw_waypoint_lines(world, camera)
         finally:
             self._end_overlay()
+
+    def _draw_waypoint_lines(self, world: World, camera: Camera3D) -> None:
+        if not world.selected_ships:
+            return
+        width, height = self._current_viewport_size
+        if width <= 0 or height <= 0:
+            return
+        for ship in world.selected_ships:
+            target = ship.move_target
+            if target is None:
+                continue
+            start_screen = camera.world_to_screen(ship.position)
+            end_screen = camera.world_to_screen(target)
+            if start_screen is None or end_screen is None:
+                continue
+            color = (
+                self._attack_waypoint_color
+                if ship.move_behavior == "attack"
+                else self._move_waypoint_color
+            )
+            self._draw_dashed_line(start_screen, end_screen, color)
+
+    def _draw_dashed_line(
+        self,
+        start: Tuple[float, float],
+        end: Tuple[float, float],
+        color: Tuple[float, float, float, float],
+        dash_length: float = 12.0,
+        gap_length: float = 6.0,
+    ) -> None:
+        dx = end[0] - start[0]
+        dy = end[1] - start[1]
+        distance = math.hypot(dx, dy)
+        if distance <= 0.0:
+            return
+        direction_x = dx / distance
+        direction_y = dy / distance
+        gl.glLineWidth(1.0)
+        gl.glColor4f(*color)
+        t = 0.0
+        while t < distance:
+            dash_end = min(distance, t + dash_length)
+            start_point = (
+                start[0] + direction_x * t,
+                start[1] + direction_y * t,
+            )
+            end_point = (
+                start[0] + direction_x * dash_end,
+                start[1] + direction_y * dash_end,
+            )
+            gl.glBegin(gl.GL_LINES)
+            gl.glVertex2f(*start_point)
+            gl.glVertex2f(*end_point)
+            gl.glEnd()
+            t = dash_end + gap_length
 
     def _begin_overlay(self, camera: Camera3D) -> bool:
         width, height = camera.viewport_size
