@@ -39,6 +39,8 @@ All ships in Cosmogenesis **must** use the following canonical fields (some are 
 * **energy** (max energy pool for abilities, weapons, systems)
 * **energy_regen** (energy per second)
 * **flight_speed** (world units per second)
+* **acceleration** (world units per second²; how quickly a ship reaches flight speed)
+* **turn_rate** (degrees per second while actively steering toward a waypoint)
 * **visual_range** (world units)
 * **radar_range** (world units; must be ≥ visual_range)
 * **firing_range** (world units; the maximum distance that primary weapons can engage)
@@ -61,6 +63,10 @@ Distances (visual, radar, firing range) can be roughly:
 * Line: ~1100–1400
 * Capital: ~1300–1800
 * Base: ~1600–2000
+
+> **Movement Behavior:**
+>
+> Ships accelerate up to their listed **flight_speed** using their **acceleration** stat. When given a movement order, a ship will continuously steer toward the active waypoint, limited by its **turn_rate**.
 
 ---
 
