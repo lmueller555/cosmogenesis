@@ -104,6 +104,9 @@ def clear_selection(world: World) -> None:
 
     world.selected_ships.clear()
     world.selected_base = None
+    cancel = getattr(world, "cancel_pending_construction", None)
+    if callable(cancel):
+        cancel()
 
 
 def select_single_ship(world: World, ship: Optional[Ship], *, additive: bool = False) -> None:

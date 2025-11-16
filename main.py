@@ -117,6 +117,11 @@ def run() -> None:
                         if renderer.handle_spawn_ui_click(world, event.pos):
                             continue
                         clamped = layout.clamp_to_gameplay(event.pos)
+                        world_pos = camera.screen_to_world(clamped)
+                        if world_pos is not None:
+                            clamped_world = _clamp_to_world(world, world_pos)
+                            if world.confirm_worker_construction(clamped_world):
+                                continue
                         selection_drag.begin(clamped)
                     elif layout.is_in_minimap(event.pos):
                         world_target = _minimap_to_world(world, layout, event.pos)
@@ -125,6 +130,9 @@ def run() -> None:
                         ui_renderer.handle_mouse_click(world, layout, event.pos)
                 elif event.button == 3:
                     if layout.is_in_gameplay(event.pos):
+                        if world.pending_construction is not None:
+                            world.cancel_pending_construction()
+                            continue
                         clamped = layout.clamp_to_gameplay(event.pos)
                         world_pos = camera.screen_to_world(clamped)
                         behavior = "attack" if pygame.key.get_pressed()[pygame.K_a] else "move"
