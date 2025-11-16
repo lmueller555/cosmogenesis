@@ -57,6 +57,23 @@ class ResearchProgress:
     paused: bool = False
 
 
+@dataclass(frozen=True)
+class ResearchProgressSnapshot:
+    """Immutable view of the currently active research node state."""
+
+    node: ResearchNode
+    remaining_time: float
+    total_time: float
+    paused: bool
+
+    @property
+    def progress_fraction(self) -> float:
+        if self.total_time <= 0.0:
+            return 1.0
+        completed = 1.0 - (self.remaining_time / self.total_time)
+        return max(0.0, min(1.0, completed))
+
+
 class ResearchManager:
     """Runtime controller for research availability, progress, and facilities."""
 
@@ -158,6 +175,19 @@ class ResearchManager:
         if self._active is None:
             return None
         return self._nodes[self._active.node_id]
+
+    def active_progress(self) -> Optional[ResearchProgressSnapshot]:
+        """Return a snapshot describing the currently running research node."""
+
+        if self._active is None:
+            return None
+        node = self._nodes[self._active.node_id]
+        return ResearchProgressSnapshot(
+            node=node,
+            remaining_time=max(0.0, self._active.remaining_time),
+            total_time=max(0.0, node.research_time),
+            paused=self._active.paused,
+        )
 
     def available_nodes(self, *, available_resources: float) -> List[ResearchNode]:
         """Return nodes that are ready to start given current state."""

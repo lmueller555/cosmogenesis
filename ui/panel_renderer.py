@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable, List, Tuple
 
 import pygame
 from OpenGL import GL as gl
@@ -209,16 +209,18 @@ class UIPanelRenderer:
     def _draw_research_section(
         self, world: World, rect: pygame.Rect, cursor_x: float, cursor_y: float
     ) -> float:
-        active, progress, remaining = self._active_research_status(world)
-        if active is None:
+        progress_snapshot = world.research_manager.active_progress()
+        if progress_snapshot is None:
             self._draw_text(cursor_x, cursor_y, "No active research", self._muted_text)
             cursor_y += 26
         else:
-            self._draw_text(cursor_x, cursor_y, f"Active: {active.name}", self._text_color)
+            node = progress_snapshot.node
+            self._draw_text(cursor_x, cursor_y, f"Active: {node.name}", self._text_color)
             cursor_y += 22
-            percent = (progress or 0.0) * 100.0
-            time_left = remaining if remaining is not None else active.research_time
-            progress_line = f"{percent:4.0f}% complete  ({time_left:0.1f}s left)"
+            percent = progress_snapshot.progress_fraction * 100.0
+            time_left = progress_snapshot.remaining_time
+            paused_suffix = " (paused)" if progress_snapshot.paused else ""
+            progress_line = f"{percent:4.0f}% complete  ({time_left:0.1f}s left){paused_suffix}"
             self._draw_text(cursor_x, cursor_y, progress_line, self._muted_text)
             cursor_y += 28
 
@@ -226,7 +228,9 @@ class UIPanelRenderer:
             world.available_research(), key=lambda node: (node.tier, node.name)
         )
         if not available:
-            idle_message = "Research in progress." if active else "No projects available."
+            idle_message = (
+                "Research in progress." if progress_snapshot is not None else "No projects available."
+            )
             self._draw_text(cursor_x, cursor_y, idle_message, self._muted_text)
             cursor_y += 22
             self._draw_text(
@@ -322,26 +326,6 @@ class UIPanelRenderer:
                 ProductionButton(ship_name=definition.name, rect=button_rect, enabled=enabled)
             )
             cursor_y += height + 6
-
-    def _active_research_status(
-        self, world: World
-    ) -> Tuple[Optional[ResearchNode], Optional[float], Optional[float]]:
-        """Return (node, progress, remaining_time) for the active project.
-
-        TODO: Replace this private attribute peek with a proper ResearchManager API
-        once one is exposed by the research systems.
-        """
-
-        manager = world.research_manager
-        node = manager.active_node()
-        if node is None:
-            return None, None, None
-        active_state = getattr(manager, "_active", None)
-        if active_state is None or node.research_time <= 0:
-            return node, 1.0, 0.0
-        remaining = max(0.0, getattr(active_state, "remaining_time", node.research_time))
-        progress = max(0.0, min(1.0, 1.0 - (remaining / node.research_time)))
-        return node, progress, remaining
 
     # ------------------------------------------------------------------
     # Mini-map
