@@ -438,7 +438,13 @@ def create_auric_veil_mesh() -> WireframeMesh:
 
 
 def create_iron_halberd_mesh() -> WireframeMesh:
-    vertices: List[Vec2] = [
+    # The original silhouette was authored with the halberd's nose pointing up the
+    # +Y axis. Ships in the simulation treat 0° rotation as facing +X, so the
+    # mesh needs to be rotated 90° clockwise to match the flight vector. Without
+    # this adjustment, the model would visibly "over rotate" compared to its
+    # waypoint heading. Apply the rotation inline so the segment ordering stays
+    # identical to the guidance notes.
+    outline: List[Vec2] = [
         (-14.0, 30.0),
         (14.0, 30.0),
         (14.0, -30.0),
@@ -452,6 +458,7 @@ def create_iron_halberd_mesh() -> WireframeMesh:
         (8.0, -42.0),
         (14.0, -36.0),
     ]
+    vertices: List[Vec2] = [(y, -x) for (x, y) in outline]
     segments = _loop_segments(4)
     segments.extend([(0, 4), (1, 5), (4, 5), (4, 6), (5, 7)])
     segments.extend([(2, 11), (11, 10), (10, 9), (9, 3), (2, 3)])
