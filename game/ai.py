@@ -23,8 +23,13 @@ class EnemyAIController:
 
     def __init__(self, world: "World") -> None:
         self._world = world
-        self._spawn_interval = 30.0
-        self._spawn_timer = 8.0
+        # Give players more breathing room by spacing out enemy reinforcements.
+        # The previous 30 second interval with an 8 second initial delay quickly
+        # flooded the arena. Bumping both values makes hostile arrivals far less
+        # frequent, which keeps the pressure manageable while still presenting a
+        # steady threat.
+        self._spawn_interval = 75.0
+        self._spawn_timer = 30.0
         self._max_active = 10
         self._ship_cycle = cycle(
             (
