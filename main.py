@@ -10,6 +10,8 @@ from game.selection import (
     SelectionDragState,
     clear_selection,
     pick_base,
+    pick_enemy_base,
+    pick_enemy_facility,
     pick_enemy_ship,
     pick_facility,
     pick_ship,
@@ -157,9 +159,13 @@ def run() -> None:
                             base.waypoint = clamped_world
                             continue
                         if world.selected_ships:
-                            enemy_ship = pick_enemy_ship(world, world_pos)
-                            if enemy_ship is not None:
-                                world.issue_attack_target(enemy_ship)
+                            attack_target = pick_enemy_ship(world, world_pos)
+                            if attack_target is None:
+                                attack_target = pick_enemy_facility(world, world_pos)
+                            if attack_target is None:
+                                attack_target = pick_enemy_base(world, world_pos)
+                            if attack_target is not None:
+                                world.issue_attack_target(attack_target)
                                 continue
                         behavior = "attack" if pygame.key.get_pressed()[pygame.K_a] else "move"
                         world.issue_move_order(clamped_world, behavior=behavior)
