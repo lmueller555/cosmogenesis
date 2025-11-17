@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 from .camera import Camera3D
-from .entities import Base, Ship
+from .entities import Base, Facility, Ship
 from .world import World
 
 Vec2 = Tuple[float, float]
@@ -104,6 +104,7 @@ def clear_selection(world: World) -> None:
 
     world.selected_ships.clear()
     world.selected_base = None
+    world.selected_facility = None
     cancel = getattr(world, "cancel_pending_construction", None)
     if callable(cancel):
         cancel()
@@ -115,6 +116,7 @@ def select_single_ship(world: World, ship: Optional[Ship], *, additive: bool = F
         clear_selection(world)
     else:
         world.selected_base = None
+        world.selected_facility = None
     if ship is not None and _is_selectable(world, ship):
         _add_to_selection(world, ship)
 
@@ -125,6 +127,17 @@ def select_base(world: World, base: Optional[Base]) -> None:
     clear_selection(world)
     if base is not None:
         world.selected_base = base
+
+
+def select_facility(world: World, facility: Optional[Facility]) -> None:
+    """Focus the given ``facility`` for interaction menus."""
+
+    clear_selection(world)
+    if facility is not None and facility in world.facilities:
+        base = facility.host_base
+        faction = base.faction if base is not None else world.player_faction
+        if faction == world.player_faction:
+            world.selected_facility = facility
 
 
 def select_ships_in_rect(
@@ -140,6 +153,7 @@ def select_ships_in_rect(
         clear_selection(world)
     else:
         world.selected_base = None
+        world.selected_facility = None
 
     min_x = min(corner_a[0], corner_b[0])
     max_x = max(corner_a[0], corner_b[0])
@@ -173,6 +187,7 @@ def select_ships_in_camera_view(
         clear_selection(world)
     else:
         world.selected_base = None
+        world.selected_facility = None
 
     definition_name = exemplar.definition.name
     for ship in world.ships:
@@ -189,3 +204,22 @@ def select_ships_in_camera_view(
 
 
 # TODO: Support mixed ship + structure selections once stance/ability commands exist.
+
+
+def pick_facility(world: World, world_pos: Vec2, radius: float = 120.0) -> Optional[Facility]:
+    """Return the closest friendly facility near ``world_pos``."""
+
+    best: Optional[Facility] = None
+    best_distance_sq = radius * radius
+    for facility in world.facilities:
+        base = facility.host_base
+        faction = base.faction if base is not None else world.player_faction
+        if faction != world.player_faction:
+            continue
+        dx = facility.position[0] - world_pos[0]
+        dy = facility.position[1] - world_pos[1]
+        distance_sq = dx * dx + dy * dy
+        if distance_sq <= best_distance_sq:
+            best_distance_sq = distance_sq
+            best = facility
+    return best

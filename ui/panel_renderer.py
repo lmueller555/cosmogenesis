@@ -51,6 +51,14 @@ class FacilityButton:
     context: str = "base"
 
 
+@dataclass
+class ContextActionButton:
+    rect: pygame.Rect
+    action: str
+    enabled: bool = True
+    facility: Facility | None = None
+
+
 @dataclass(frozen=True)
 class FacilityIconMesh:
     vertices: List[Vec2]
@@ -96,6 +104,7 @@ class UIPanelRenderer:
         self._research_buttons: List[ResearchButton] = []
         self._production_buttons: List[ProductionButton] = []
         self._facility_buttons: List[FacilityButton] = []
+        self._context_buttons: List[ContextActionButton] = []
         self._context_scroll: float = 0.0
         self._context_content_height: float = 0.0
 
@@ -103,6 +112,7 @@ class UIPanelRenderer:
         self._research_buttons.clear()
         self._production_buttons.clear()
         self._facility_buttons.clear()
+        self._context_buttons.clear()
 
         width, height = layout.window_size
         gl.glViewport(0, 0, width, height)
@@ -186,7 +196,19 @@ class UIPanelRenderer:
             if button.enabled and world.queue_facility(base, button.facility_type):
                 return True
             return True
+        for button in self._context_buttons:
+            if not button.enabled or not button.rect.collidepoint(pos):
+                continue
+            if self._activate_context_button(world, button):
+                return True
         return True
+
+    def _activate_context_button(self, world: World, button: ContextActionButton) -> bool:
+        if button.action == "toggle_facility" and button.facility is not None:
+            desired_state = not button.facility.online
+            world.set_facility_online(button.facility, desired_state)
+            return True
+        return False
 
     # ------------------------------------------------------------------
     # Background & panel scaffolding
@@ -355,6 +377,11 @@ class UIPanelRenderer:
             self._draw_base_shipyard_panel(world, rect)
             return
 
+        facility = world.selected_facility
+        if facility is not None:
+            self._draw_facility_summary(rect, facility)
+            return
+
         ships = list(world.selected_ships)
         if not ships:
             self._draw_text_block(
@@ -460,6 +487,38 @@ class UIPanelRenderer:
             "Ship Construction",
             self._context_text,
         )
+
+    def _draw_facility_summary(self, rect: pygame.Rect, facility: Facility) -> None:
+        padding = 16
+        cursor_x = rect.left + padding
+        cursor_y = rect.top + padding
+        host = facility.host_base.name if facility.host_base is not None else "Unattached"
+        status = "Online" if facility.online else "Offline"
+        status_color = self._text_color if facility.online else self._muted_text
+        lines = [
+            f"{facility.name} (Facility)",
+            f"Host: {host}",
+            f"Status: {status}",
+            f"HP: {facility.current_health:.0f}/{facility.max_health:.0f}",
+            f"Shields: {facility.current_shields:.0f}/{facility.max_shields:.0f}",
+        ]
+        if facility.armor_value > 0.0:
+            lines.append(f"Armor: {facility.armor_value:.0f}")
+        lines.extend(
+            [
+                f"Cost: {facility.definition.resource_cost:,}",
+                f"Build Time: {facility.definition.build_time:.0f}s",
+            ]
+        )
+        for index, line in enumerate(lines):
+            color = status_color if index == 2 else self._text_color
+            self._draw_text(cursor_x, cursor_y, line, color)
+            cursor_y += 22
+        cursor_y += 10
+        desc_width = rect.width - 2 * padding
+        for wrapped in self._wrap_text(facility.definition.description, desc_width):
+            self._draw_text(cursor_x, cursor_y, wrapped, self._muted_text)
+            cursor_y += 20
 
     def _draw_shipyard_buttons(
         self,
@@ -639,6 +698,8 @@ class UIPanelRenderer:
         selection_kind = self._context_selection_kind(world)
         if selection_kind == "base":
             cursor_y = self._draw_base_context(world, rect, cursor_x, cursor_y)
+        elif selection_kind == "facility":
+            cursor_y = self._draw_facility_context(world, rect, cursor_x, cursor_y)
         elif selection_kind == "worker":
             cursor_y = self._draw_worker_context(world, rect, cursor_x, cursor_y)
         elif selection_kind == "ship":
@@ -651,6 +712,8 @@ class UIPanelRenderer:
     def _context_selection_kind(self, world: World) -> str:
         if world.selected_base is not None:
             return "base"
+        if world.selected_facility is not None:
+            return "facility"
         if world.selected_ships:
             if all(ship.is_worker for ship in world.selected_ships):
                 return "worker"
@@ -686,6 +749,185 @@ class UIPanelRenderer:
         cursor_y += 18
         cursor_y = self._draw_facility_section(world, rect, cursor_x, cursor_y, base)
         cursor_y += 18
+        return cursor_y
+
+    def _draw_facility_context(
+        self, world: World, rect: pygame.Rect, cursor_x: float, cursor_y: float
+    ) -> float:
+        facility = world.selected_facility
+        if facility is None:
+            self._draw_text(cursor_x, cursor_y, "Select a facility to manage.", self._muted_text)
+            return cursor_y + 22
+        self._draw_text(cursor_x, cursor_y, f"{facility.name} Controls", self._context_text)
+        cursor_y += 24
+        host = facility.host_base.name if facility.host_base is not None else "Unattached"
+        self._draw_text(cursor_x, cursor_y, f"Attached to: {host}", self._muted_text)
+        cursor_y += 20
+        status = "Online" if facility.online else "Offline"
+        status_color = self._text_color if facility.online else self._muted_text
+        self._draw_text(cursor_x, cursor_y, f"Status: {status}", status_color)
+        cursor_y += 24
+        cursor_y = self._draw_facility_toggle_button(rect, cursor_y, facility)
+        cursor_y += 16
+        cursor_y = self._draw_facility_research_section(world, rect, cursor_x, cursor_y, facility)
+        cursor_y += 16
+        cursor_y = self._draw_facility_ability_section(cursor_x, cursor_y)
+        return cursor_y
+
+    def _draw_facility_toggle_button(
+        self, rect: pygame.Rect, cursor_y: float, facility: Facility
+    ) -> float:
+        button_rect = pygame.Rect(rect.left + 8, int(cursor_y), rect.width - 16, 56)
+        if facility.online:
+            bg = (0.12, 0.18, 0.26, 0.95)
+            border = (0.32, 0.42, 0.58, 1.0)
+            label = "Deactivate Facility"
+            detail = "Pause research access from this hub."
+        else:
+            bg = (0.1, 0.12, 0.18, 0.9)
+            border = (0.25, 0.3, 0.42, 1.0)
+            label = "Activate Facility"
+            detail = "Resume tech operations here."
+        self._draw_rect(button_rect, bg)
+        self._draw_rect_outline(button_rect, border)
+        self._draw_text(button_rect.left + 12, button_rect.top + 16, label, self._text_color)
+        self._draw_text(
+            button_rect.left + 12,
+            button_rect.top + 34,
+            detail,
+            self._muted_text,
+        )
+        self._context_buttons.append(
+            ContextActionButton(
+                rect=button_rect,
+                action="toggle_facility",
+                facility=facility,
+            )
+        )
+        return float(button_rect.bottom + 8)
+
+    def _draw_facility_research_section(
+        self,
+        world: World,
+        rect: pygame.Rect,
+        cursor_x: float,
+        cursor_y: float,
+        facility: Facility,
+    ) -> float:
+        self._draw_text(cursor_x, cursor_y, "Research Projects", self._context_text)
+        cursor_y += 24
+        availabilities = [
+            entry
+            for entry in world.research_statuses()
+            if entry.node.host_facility_type == facility.facility_type
+        ]
+        if not availabilities:
+            self._draw_text(
+                cursor_x,
+                cursor_y,
+                "No tech nodes assigned to this facility.",
+                self._muted_text,
+            )
+            cursor_y += 22
+            return cursor_y
+        progress_snapshot = world.research_manager.active_progress()
+        if (
+            progress_snapshot is not None
+            and progress_snapshot.node.host_facility_type == facility.facility_type
+        ):
+            node = progress_snapshot.node
+            percent = progress_snapshot.progress_fraction * 100.0
+            time_left = progress_snapshot.remaining_time
+            paused_suffix = " (paused)" if progress_snapshot.paused else ""
+            self._draw_text(cursor_x, cursor_y, f"Active: {node.name}", self._text_color)
+            cursor_y += 22
+            self._draw_text(
+                cursor_x,
+                cursor_y,
+                f"{percent:4.0f}% complete ({time_left:0.1f}s left){paused_suffix}",
+                self._muted_text,
+            )
+            cursor_y += 28
+        elif progress_snapshot is not None:
+            host_name = world.facility_display_name(progress_snapshot.node.host_facility_type)
+            self._draw_text(
+                cursor_x,
+                cursor_y,
+                f"Active at {host_name}: {progress_snapshot.node.name}",
+                self._muted_text,
+            )
+            cursor_y += 24
+
+        ready = [entry for entry in availabilities if entry.can_start]
+        locked = [entry for entry in availabilities if not entry.can_start]
+        if ready:
+            self._draw_text(cursor_x, cursor_y, "Available Projects", self._context_text)
+            cursor_y += 24
+            for entry in ready:
+                height = 88
+                button_rect = pygame.Rect(rect.left + 8, int(cursor_y), rect.width - 16, height)
+                self._draw_research_button(
+                    button_rect,
+                    entry.node,
+                    enabled=True,
+                    status_line="Ready to start",
+                )
+                self._research_buttons.append(
+                    ResearchButton(node_id=entry.node.id, rect=button_rect, enabled=True)
+                )
+                cursor_y += height + 8
+        else:
+            self._draw_text(
+                cursor_x,
+                cursor_y,
+                "No projects can start from this facility yet.",
+                self._muted_text,
+            )
+            cursor_y += 22
+
+        if locked:
+            cursor_y += 12
+            self._draw_text(cursor_x, cursor_y, "Locked Projects", self._context_text)
+            cursor_y += 24
+            for entry in locked:
+                height = 88
+                button_rect = pygame.Rect(rect.left + 8, int(cursor_y), rect.width - 16, height)
+                status_line = entry.blocked_reason or "Unavailable"
+                self._draw_research_button(
+                    button_rect,
+                    entry.node,
+                    enabled=False,
+                    status_line=status_line,
+                )
+                self._research_buttons.append(
+                    ResearchButton(
+                        node_id=entry.node.id,
+                        rect=button_rect,
+                        enabled=False,
+                    )
+                )
+                cursor_y += height + 8
+        return cursor_y
+
+    def _draw_facility_ability_section(
+        self, cursor_x: float, cursor_y: float
+    ) -> float:
+        self._draw_text(cursor_x, cursor_y, "Facility Abilities", self._context_text)
+        cursor_y += 24
+        self._draw_text(
+            cursor_x,
+            cursor_y,
+            "No active abilities implemented yet.",
+            self._muted_text,
+        )
+        cursor_y += 22
+        self._draw_text(
+            cursor_x,
+            cursor_y,
+            "TODO: Hook facility powers per game_guidance.",
+            self._muted_text,
+        )
+        cursor_y += 22
         return cursor_y
 
     def _draw_facility_overview(
@@ -1243,6 +1485,18 @@ class UIPanelRenderer:
                     color = self._selected_color
             point = self._world_to_minimap(ship.position, rect, bounds)
             self._draw_minimap_dot(point, color)
+
+        for facility in world.facilities:
+            base = facility.host_base
+            if base is not None and base.faction != world.player_faction:
+                continue
+            color = (
+                self._selected_color
+                if facility is world.selected_facility
+                else self._friendly_color
+            )
+            point = self._world_to_minimap(facility.position, rect, bounds)
+            self._draw_minimap_dot(point, color, size=4.0)
 
         for base in world.bases:
             point = self._world_to_minimap(base.position, rect, bounds)
