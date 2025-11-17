@@ -905,29 +905,6 @@ def create_initial_world() -> World:
         world._configure_worker(worker, base, resource_target=planetoid)
         world.ships.append(worker)
 
-    # Stub in Shipwright Foundry + Fleet Forge attached to the Astral Citadel.
-    shipwright_def = get_facility_definition("ShipwrightFoundry")
-    fleet_forge_def = get_facility_definition("FleetForge")
-    research_nexus_def = get_facility_definition("ResearchNexus")
-    shipwright = Facility(
-        position=world._facility_slot_position(base, world._next_facility_slot(base)),
-        definition=shipwright_def,
-        host_base=base,
-    )
-    research_nexus = Facility(
-        position=world._facility_slot_position(base, world._next_facility_slot(base)),
-        definition=research_nexus_def,
-        host_base=base,
-    )
-    world.add_facility(shipwright)
-    fleet_forge = Facility(
-        position=world._facility_slot_position(base, world._next_facility_slot(base)),
-        definition=fleet_forge_def,
-        host_base=base,
-    )
-    world.add_facility(fleet_forge)
-    world.add_facility(research_nexus)
-
     # Seed a handful of strike/escort ships for visualization tests.
     spearling = Ship(position=(400.0, 120.0), definition=get_ship_definition("Spearling"))
     warden = Ship(position=(520.0, -80.0), definition=get_ship_definition("Warden"))
