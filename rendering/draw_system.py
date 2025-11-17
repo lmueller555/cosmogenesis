@@ -289,6 +289,8 @@ class WireframeRenderer:
         faction = base.faction if base is not None else world.player_faction
         if faction != world.player_faction:
             return self.enemy_color
+        if world.selected_facility is facility:
+            return self.selection_color
         if not facility.online:
             return (0.45, 0.5, 0.62, 1.0)
         return LINE_COLOR

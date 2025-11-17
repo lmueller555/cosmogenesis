@@ -79,6 +79,7 @@ class World:
     facility_jobs: List[FacilityConstructionJob] = field(default_factory=list)
     selected_ships: List[Ship] = field(default_factory=list)
     selected_base: Base | None = None
+    selected_facility: Facility | None = None
     resources: float = 20_000.0
     resource_income_rate: float = 0.0  # Updated each tick for UI feedback
     research_manager: ResearchManager = field(default_factory=ResearchManager)
@@ -226,6 +227,8 @@ class World:
     def remove_facility(self, facility: Facility) -> None:
         if facility in self.facilities:
             self.facilities.remove(facility)
+            if self.selected_facility is facility:
+                self.selected_facility = None
             self._sync_facility_type(facility.facility_type)
 
     def set_facility_online(self, facility: Facility, online: bool) -> None:

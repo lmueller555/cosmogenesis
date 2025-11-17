@@ -10,8 +10,10 @@ from game.selection import (
     SelectionDragState,
     clear_selection,
     pick_base,
+    pick_facility,
     pick_ship,
     select_base,
+    select_facility,
     select_ships_in_camera_view,
     select_ships_in_rect,
     select_single_ship,
@@ -211,6 +213,10 @@ def run() -> None:
                                 )
                             else:
                                 select_single_ship(world, ship, additive=additive)
+                            continue
+                        facility = pick_facility(world, world_pos)
+                        if facility is not None:
+                            select_facility(world, facility)
                             continue
                         base = pick_base(world, world_pos)
                         if base is not None:
