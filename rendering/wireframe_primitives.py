@@ -142,73 +142,100 @@ def create_asteroid_mesh(radius: float = 24.0) -> WireframeMesh:
 
 
 def create_astral_citadel_mesh() -> WireframeMesh:
-    """Construct a low-poly representation of the Astral Citadel base."""
+    """Construct a long-hull base with cargo arms and aft boosters."""
+
     vertices: List[Vec2] = []
     lines: List[Tuple[int, int]] = []
 
-    # Central hexagonal core
-    core_radius = 30.0
-    for i in range(6):
-        angle = (math.pi / 3) * i
-        vertices.append((math.cos(angle) * core_radius, math.sin(angle) * core_radius))
-        if i > 0:
-            lines.append((i - 1, i))
-    lines.append((5, 0))
+    # Primary hull (elongated spearhead)
+    hull_outline: List[Vec2] = [
+        (0.0, 150.0),  # nose
+        (30.0, 95.0),
+        (36.0, 40.0),
+        (42.0, -10.0),
+        (38.0, -70.0),
+        (28.0, -140.0),
+        (0.0, -170.0),
+        (-28.0, -140.0),
+        (-38.0, -70.0),
+        (-42.0, -10.0),
+        (-36.0, 40.0),
+        (-30.0, 95.0),
+    ]
+    hull_start = len(vertices)
+    vertices.extend(hull_outline)
+    for i in range(len(hull_outline)):
+        lines.append((hull_start + i, hull_start + ((i + 1) % len(hull_outline))))
+    # Reinforcing ridges along the hull
+    spine_top = hull_start
+    spine_bottom = hull_start + 6
+    lines.append((spine_top, spine_bottom))
+    lines.append((hull_start + 2, hull_start + 10))
+    lines.append((hull_start + 3, hull_start + 9))
 
-    # Outer ring spokes and arcs (broken crown)
-    ring_radius = 70.0
-    crown_segments = 8
-    crown_start_index = len(vertices)
-    for i in range(crown_segments):
-        angle = ((math.pi * 1.2) / crown_segments) * i + math.pi / 2.4
-        vertices.append((math.cos(angle) * ring_radius, math.sin(angle) * ring_radius))
-        if i > 0:
-            lines.append((crown_start_index + i - 1, crown_start_index + i))
-    # Leave intentional gap by not connecting last to first
+    # Cargo arms (large rectangular pods on both sides)
+    arm_forward = 50.0
+    arm_rear = -50.0
+    arm_offset = 70.0
+    arm_length = 65.0
+    arm_thickness = 30.0
 
-    # Spokes connecting crown to core
-    for i in range(0, crown_segments, 2):
-        core_index = (i // 2) % 6
-        lines.append((core_index, crown_start_index + i))
+    def add_cargo_arm(sign: float) -> None:
+        base_x = sign * (arm_offset + arm_length)
+        inner_x = sign * arm_offset
+        arm_start = len(vertices)
+        vertices.extend(
+            [
+                (inner_x, arm_forward + arm_thickness),
+                (base_x, arm_forward + arm_thickness),
+                (base_x, arm_rear - arm_thickness),
+                (inner_x, arm_rear - arm_thickness),
+            ]
+        )
+        lines.extend(
+            [
+                (arm_start, arm_start + 1),
+                (arm_start + 1, arm_start + 2),
+                (arm_start + 2, arm_start + 3),
+                (arm_start + 3, arm_start),
+                (arm_start, arm_start + 2),
+            ]
+        )
+        # Connect arm to hull bulkhead
+        lines.append((arm_start, hull_start + (0 if sign > 0 else 11)))
+        lines.append((arm_start + 3, hull_start + (5 if sign > 0 else 6)))
 
-    # Docking arms left/right
-    arm_length = 95.0
-    arm_offset = 25.0
-    left_arm = len(vertices)
-    vertices.extend([(-arm_length, arm_offset), (-core_radius, arm_offset), (-core_radius, -arm_offset), (-arm_length, -arm_offset)])
-    lines.extend(
-        [
-            (left_arm, left_arm + 1),
-            (left_arm + 1, left_arm + 2),
-            (left_arm + 2, left_arm + 3),
-            (left_arm + 3, left_arm),
-        ]
-    )
+    add_cargo_arm(1.0)
+    add_cargo_arm(-1.0)
 
-    right_arm = len(vertices)
-    vertices.extend([(arm_length, arm_offset), (core_radius, arm_offset), (core_radius, -arm_offset), (arm_length, -arm_offset)])
-    lines.extend(
-        [
-            (right_arm, right_arm + 1),
-            (right_arm + 1, right_arm + 2),
-            (right_arm + 2, right_arm + 3),
-            (right_arm + 3, right_arm),
-        ]
-    )
+    # Booster banks (four long cylindrical thrusters aft of the hull)
+    booster_front = -150.0
+    booster_back = -230.0
+    booster_half_width = 6.0
+    booster_offsets = (-40.0, -18.0, 18.0, 40.0)
+    for offset in booster_offsets:
+        booster_start = len(vertices)
+        vertices.extend(
+            [
+                (offset - booster_half_width, booster_front),
+                (offset + booster_half_width, booster_front),
+                (offset + booster_half_width, booster_back),
+                (offset - booster_half_width, booster_back),
+            ]
+        )
+        lines.extend(
+            [
+                (booster_start, booster_start + 1),
+                (booster_start + 1, booster_start + 2),
+                (booster_start + 2, booster_start + 3),
+                (booster_start + 3, booster_start),
+            ]
+        )
+        # struts back to hull base
+        lines.append((booster_start, hull_start + 5))
+        lines.append((booster_start + 1, hull_start + 6))
 
-    # Forward siege projector (simple diamond)
-    projector_start = len(vertices)
-    nose_length = 110.0
-    vertices.extend([(0.0, nose_length), (10.0, core_radius), (-10.0, core_radius)])
-    lines.extend(
-        [
-            (projector_start, projector_start + 1),
-            (projector_start, projector_start + 2),
-            (projector_start + 1, projector_start + 2),
-        ]
-    )
-
-    return _extrude_outline(vertices, lines, height=80.0)
+    return _extrude_outline(vertices, lines, height=90.0)
 
 
 # --- Ship Meshes ---------------------------------------------------------
