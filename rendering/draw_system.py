@@ -40,6 +40,8 @@ from .wireframe_primitives import (
     create_skimmer_drone_mesh,
 )
 
+Vec2 = Tuple[float, float]
+
 class WireframeRenderer:
     """Handles drawing of world entities using shared mesh data."""
 
@@ -414,22 +416,31 @@ class WireframeRenderer:
             self._end_overlay()
 
     def _draw_waypoint_lines(self, world: World, camera: Camera3D) -> None:
-        if not world.selected_ships:
-            return
         width, height = self._current_viewport_size
         if width <= 0 or height <= 0:
             return
+        move_commands: list[tuple[Vec2, Vec2, str]] = []
+        base = world.selected_base
+        if base is not None and base.waypoint is not None:
+            move_commands.append((base.position, base.waypoint, "move"))
+
         for ship in world.selected_ships:
             target = ship.move_target
             if target is None:
                 continue
-            start_screen = camera.world_to_screen(ship.position)
-            end_screen = camera.world_to_screen(target)
+            move_commands.append((ship.position, target, ship.move_behavior))
+
+        if not move_commands:
+            return
+
+        for start, end, behavior in move_commands:
+            start_screen = camera.world_to_screen(start)
+            end_screen = camera.world_to_screen(end)
             if start_screen is None or end_screen is None:
                 continue
             color = (
                 self._attack_waypoint_color
-                if ship.move_behavior == "attack"
+                if behavior == "attack"
                 else self._move_waypoint_color
             )
             self._draw_dashed_line(start_screen, end_screen, color)
