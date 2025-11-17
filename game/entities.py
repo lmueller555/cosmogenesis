@@ -175,6 +175,18 @@ class Base(Entity):
             self.max_health, self.current_health + repair_rate * dt
         )
 
+    def tick_energy_regen(self, dt: float) -> None:
+        if dt <= 0.0:
+            return
+        if self.energy_regen_value <= 0.0:
+            return
+        if self.current_energy >= self.max_energy:
+            return
+        self.current_energy = min(
+            self.max_energy,
+            self.current_energy + self.energy_regen_value * dt,
+        )
+
 
 @dataclass
 class Facility(Entity):
@@ -188,6 +200,9 @@ class Facility(Entity):
     max_health: float = field(init=False)
     max_shields: float = field(init=False)
     armor_value: float = field(default=0.0, init=False)
+    max_energy: float = field(default=0.0, init=False)
+    current_energy: float = field(default=0.0, init=False)
+    energy_regen_value: float = field(default=0.0, init=False)
     _time_since_damage: float = field(default=PASSIVE_REPAIR_DELAY, init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -195,7 +210,10 @@ class Facility(Entity):
         self.max_shields = float(self.definition.shields)
         self.current_health = self.max_health
         self.current_shields = self.max_shields
-        # TODO: Populate armor/energy stats once guidance specifies them per facility.
+        self.max_energy = float(self.definition.energy)
+        self.current_energy = self.max_energy
+        self.energy_regen_value = float(self.definition.energy_regen)
+        # TODO: Populate armor stats once guidance specifies them per facility.
         self._time_since_damage = PASSIVE_REPAIR_DELAY
 
     @property
@@ -232,6 +250,7 @@ class Facility(Entity):
     def repair_full(self) -> None:
         self.current_health = self.max_health
         self.current_shields = self.max_shields
+        self.current_energy = self.max_energy
         self._time_since_damage = PASSIVE_REPAIR_DELAY
 
     def tick_passive_repair(self, dt: float) -> None:
@@ -247,6 +266,18 @@ class Facility(Entity):
             return
         self.current_health = min(
             self.max_health, self.current_health + repair_rate * dt
+        )
+
+    def tick_energy_regen(self, dt: float) -> None:
+        if dt <= 0.0:
+            return
+        if self.energy_regen_value <= 0.0:
+            return
+        if self.current_energy >= self.max_energy:
+            return
+        self.current_energy = min(
+            self.max_energy,
+            self.current_energy + self.energy_regen_value * dt,
         )
 
 

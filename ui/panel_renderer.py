@@ -519,6 +519,10 @@ class UIPanelRenderer:
             f"HP: {facility.current_health:.0f}/{facility.max_health:.0f}",
             f"Shields: {facility.current_shields:.0f}/{facility.max_shields:.0f}",
         ]
+        if facility.max_energy > 0.0:
+            lines.append(
+                f"Energy: {facility.current_energy:.0f}/{facility.max_energy:.0f} (+{facility.energy_regen_value:.1f}/s)"
+            )
         if facility.armor_value > 0.0:
             lines.append(f"Armor: {facility.armor_value:.0f}")
         lines.extend(

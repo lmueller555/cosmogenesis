@@ -16,6 +16,8 @@ class FacilityDefinition:
     build_time: float
     health: int
     shields: int
+    energy: int = 0
+    energy_regen: float = 0.0
 
 
 _FACILITIES: Dict[str, FacilityDefinition] = {
