@@ -189,6 +189,10 @@ class Facility(Entity):
     max_shields: float = field(init=False)
     armor_value: float = field(default=0.0, init=False)
     _time_since_damage: float = field(default=PASSIVE_REPAIR_DELAY, init=False, repr=False)
+    weapon_damage_value: float = field(init=False)
+    firing_range_value: float = field(init=False)
+    _weapon_cooldown: float = field(default=0.0, init=False, repr=False)
+    _weapon_cycle_time: float = field(default=1.0, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.max_health = float(self.definition.health)
@@ -197,6 +201,11 @@ class Facility(Entity):
         self.current_shields = self.max_shields
         # TODO: Populate armor/energy stats once guidance specifies them per facility.
         self._time_since_damage = PASSIVE_REPAIR_DELAY
+        self.weapon_damage_value = float(getattr(self.definition, "weapon_damage", 0.0))
+        self.firing_range_value = float(getattr(self.definition, "firing_range", 0.0))
+        cooldown = float(getattr(self.definition, "weapon_cooldown", 1.0))
+        self._weapon_cycle_time = max(0.1, cooldown)
+        self._weapon_cooldown = 0.0
 
     @property
     def facility_type(self) -> str:
@@ -205,6 +214,12 @@ class Facility(Entity):
     @property
     def name(self) -> str:
         return self.definition.name
+
+    @property
+    def faction(self) -> str:
+        if self.host_base is not None:
+            return self.host_base.faction
+        return "player"
 
     def set_online(self, online: bool) -> None:
         """Toggle operational status; ``World`` informs ``ResearchManager``."""
@@ -248,6 +263,23 @@ class Facility(Entity):
         self.current_health = min(
             self.max_health, self.current_health + repair_rate * dt
         )
+
+    def tick_weapon_cooldown(self, dt: float) -> None:
+        if dt <= 0.0 or self._weapon_cooldown <= 0.0:
+            return
+        self._weapon_cooldown = max(0.0, self._weapon_cooldown - dt)
+
+    def ready_to_fire(self) -> bool:
+        return (
+            self.online
+            and self.weapon_damage_value > 0.0
+            and self.firing_range_value > 0.0
+            and self._weapon_cooldown <= 0.0
+        )
+
+    def fire_weapon(self) -> float:
+        self._weapon_cooldown = self._weapon_cycle_time
+        return self.weapon_damage_value
 
 
 @dataclass

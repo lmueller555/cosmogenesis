@@ -800,3 +800,42 @@ def create_defense_grid_node_mesh() -> WireframeMesh:
     ]
     segments.extend(connections)
     return _extrude_outline(outline, segments, height=20.0)
+
+
+def create_sentinel_cannon_mesh() -> WireframeMesh:
+    """Compact turret base with a forward cannon barrel."""
+
+    base_outline = [
+        (0.0, -55.0),
+        (35.0, -35.0),
+        (55.0, 0.0),
+        (35.0, 35.0),
+        (0.0, 55.0),
+        (-35.0, 35.0),
+        (-55.0, 0.0),
+        (-35.0, -35.0),
+    ]
+    segments = _loop_segments(len(base_outline))
+    # Cross braces for the octagonal base
+    braces = [(0, 4), (1, 5), (2, 6), (3, 7)]
+    segments.extend(braces)
+
+    # Cannon barrel protrusion
+    barrel_start = len(base_outline)
+    barrel = [
+        (-8.0, -55.0),
+        (-4.0, -105.0),
+        (4.0, -105.0),
+        (8.0, -55.0),
+    ]
+    base_outline.extend(barrel)
+    segments.extend(
+        [
+            (barrel_start + i, barrel_start + ((i + 1) % len(barrel)))
+            for i in range(len(barrel))
+        ]
+    )
+    # Connect barrel back to base corners to imply mounting hardware.
+    segments.extend([(0, barrel_start), (0, barrel_start + 3), (7, barrel_start), (7, barrel_start + 3)])
+
+    return _extrude_outline(base_outline, segments, height=22.0)

@@ -22,6 +22,7 @@ from .wireframe_primitives import (
     create_asteroid_mesh,
     create_abyssal_crown_mesh,
     create_defense_grid_node_mesh,
+    create_sentinel_cannon_mesh,
     create_fleet_forge_mesh,
     create_daggerwing_mesh,
     create_iron_halberd_mesh,
@@ -70,18 +71,21 @@ class WireframeRenderer:
             "FleetForge": create_fleet_forge_mesh(),
             "ResearchNexus": create_research_nexus_mesh(),
             "DefenseGridNode": create_defense_grid_node_mesh(),
+            "SentinelCannon": create_sentinel_cannon_mesh(),
         }
         self._facility_offsets: Dict[str, Tuple[float, float]] = {
             "ShipwrightFoundry": (-150.0, -70.0),
             "FleetForge": (150.0, -70.0),
             "ResearchNexus": (-150.0, 80.0),
             "DefenseGridNode": (150.0, 80.0),
+            "SentinelCannon": (0.0, 160.0),
         }
         self._facility_scales: Dict[str, float] = {
             "ShipwrightFoundry": 0.85,
             "FleetForge": 0.9,
             "ResearchNexus": 0.75,
             "DefenseGridNode": 0.78,
+            "SentinelCannon": 0.82,
         }
         self.selection_color: Tuple[float, float, float, float] = (1.0, 0.82, 0.26, 1.0)
         self.enemy_color: Tuple[float, float, float, float] = (1.0, 0.35, 0.35, 1.0)
