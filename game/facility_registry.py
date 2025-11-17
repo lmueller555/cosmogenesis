@@ -26,7 +26,7 @@ _FACILITIES: Dict[str, FacilityDefinition] = {
         description=(
             "Unlocks Strike/Escort hull research trees and enables light ship fabrication."
         ),
-        resource_cost=6000,
+        resource_cost=600,
         build_time=45.0,
         health=8000,
         shields=4000,
@@ -37,7 +37,7 @@ _FACILITIES: Dict[str, FacilityDefinition] = {
         description=(
             "Supports Line/Capital hull research plus heavy ship fabrication throughput."
         ),
-        resource_cost=9000,
+        resource_cost=900,
         build_time=60.0,
         health=11000,
         shields=5500,
@@ -48,7 +48,7 @@ _FACILITIES: Dict[str, FacilityDefinition] = {
         description=(
             "Coordinates global upgrades, sensor tech, and economic improvements."
         ),
-        resource_cost=7000,
+        resource_cost=700,
         build_time=50.0,
         health=6500,
         shields=5000,
@@ -59,7 +59,7 @@ _FACILITIES: Dict[str, FacilityDefinition] = {
         description=(
             "Projects defensive auras and unlocks station hardening technologies."
         ),
-        resource_cost=6500,
+        resource_cost=650,
         build_time=48.0,
         health=7500,
         shields=4200,
