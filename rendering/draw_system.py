@@ -408,6 +408,7 @@ class WireframeRenderer:
         try:
             self._draw_ship_status_bars(world, camera)
             self._draw_base_progress_bars(world, camera)
+            self._draw_research_progress_bars(world, camera)
             self._draw_worker_construction_bars(world, camera)
             self._draw_waypoint_lines(world, camera)
         finally:
@@ -505,6 +506,31 @@ class WireframeRenderer:
                 continue
             self._draw_progress_bar(screen_pos, job)
 
+    def _draw_research_progress_bars(self, world: World, camera: Camera3D) -> None:
+        progress_snapshot = world.research_manager.active_progress()
+        if progress_snapshot is None:
+            return
+        facility_type = progress_snapshot.node.host_facility_type
+        matching_facilities = [
+            facility
+            for facility in world.facilities
+            if facility.facility_type == facility_type
+            and facility.faction == world.player_faction
+        ]
+        if not matching_facilities:
+            return
+        for facility in matching_facilities:
+            position = self._facility_render_position(facility)
+            screen_pos = camera.world_to_screen(position)
+            if screen_pos is None:
+                continue
+            self._draw_research_progress_bar(
+                screen_pos,
+                progress_snapshot.node.name,
+                progress_snapshot.progress_fraction,
+                paused=progress_snapshot.paused,
+            )
+
     def _draw_worker_construction_bars(self, world: World, camera: Camera3D) -> None:
         jobs = getattr(world, "facility_jobs", None)
         if not jobs:
@@ -554,6 +580,47 @@ class WireframeRenderer:
         if text_y < 0:
             text_y = rect.bottom + 4
         self._draw_overlay_text(text_x, text_y, label, (220, 230, 255))
+
+    def _draw_research_progress_bar(
+        self,
+        screen_pos: Tuple[float, float],
+        label: str,
+        progress: float,
+        *,
+        paused: bool,
+    ) -> None:
+        width = 150
+        height = 12
+        bar_offset = 70
+        rect = pygame.Rect(
+            int(screen_pos[0] - width / 2),
+            int(screen_pos[1] - bar_offset - height),
+            width,
+            height,
+        )
+        viewport_rect = pygame.Rect(0, 0, *self._current_viewport_size)
+        if viewport_rect.width > 0 and viewport_rect.height > 0:
+            if viewport_rect.width > 16 and viewport_rect.height > 16:
+                rect.clamp_ip(viewport_rect.inflate(-8, -8))
+            else:
+                rect.clamp_ip(viewport_rect)
+        self._draw_overlay_rect(rect, (0.04, 0.05, 0.08, 0.9))
+        self._draw_overlay_outline(rect, (0.3, 0.38, 0.52, 1.0))
+        inner = rect.inflate(-4, -4)
+        progress = max(0.0, min(1.0, progress))
+        fill_width = int(inner.width * progress)
+        if fill_width > 0:
+            fill = pygame.Rect(inner.left, inner.top, fill_width, inner.height)
+            fill_color = (0.75, 0.75, 0.45, 0.95) if paused else (0.2, 0.78, 0.55, 0.95)
+            self._draw_overlay_rect(fill, fill_color)
+        paused_suffix = " (paused)" if paused else ""
+        label_text = f"{label}{paused_suffix}"
+        label_width, _ = self._overlay_font.size(label_text)
+        text_x = rect.centerx - label_width / 2
+        text_y = rect.top - 16
+        if text_y < 0:
+            text_y = rect.bottom + 4
+        self._draw_overlay_text(text_x, text_y, label_text, (220, 230, 255))
 
     def _draw_construction_progress_bar(
         self, screen_pos: Tuple[float, float], label: str, progress: float
