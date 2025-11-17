@@ -61,6 +61,13 @@ def _is_visible_to_player(world: World, ship: Ship) -> bool:
     return grid.is_visual(ship.position) or grid.is_radar(ship.position)
 
 
+def _is_structure_visible(world: World, position: Vec2) -> bool:
+    grid = getattr(world, "visibility", None)
+    if grid is None:
+        return True
+    return grid.is_visual(position) or grid.is_radar(position)
+
+
 def pick_ship(world: World, world_pos: Vec2, radius: float = 80.0) -> Optional[Ship]:
     """Return the closest ship within ``radius`` units of ``world_pos``."""
     best_ship: Optional[Ship] = None
@@ -94,6 +101,25 @@ def pick_enemy_ship(world: World, world_pos: Vec2, radius: float = 80.0) -> Opti
             best_distance_sq = distance_sq
             best_ship = ship
     return best_ship
+
+
+def pick_enemy_base(world: World, world_pos: Vec2, radius: float = 220.0) -> Optional[Base]:
+    """Return a nearby hostile base if the cursor is close enough."""
+
+    best: Optional[Base] = None
+    best_distance_sq = radius * radius
+    for base in world.bases:
+        if base.faction == world.player_faction:
+            continue
+        if not _is_structure_visible(world, base.position):
+            continue
+        dx = base.position[0] - world_pos[0]
+        dy = base.position[1] - world_pos[1]
+        distance_sq = dx * dx + dy * dy
+        if distance_sq <= best_distance_sq:
+            best_distance_sq = distance_sq
+            best = base
+    return best
 
 
 def pick_base(world: World, world_pos: Vec2, radius: float = 220.0) -> Optional[Base]:
@@ -234,6 +260,29 @@ def pick_facility(world: World, world_pos: Vec2, radius: float = 120.0) -> Optio
         base = facility.host_base
         faction = base.faction if base is not None else world.player_faction
         if faction != world.player_faction:
+            continue
+        dx = facility.position[0] - world_pos[0]
+        dy = facility.position[1] - world_pos[1]
+        distance_sq = dx * dx + dy * dy
+        if distance_sq <= best_distance_sq:
+            best_distance_sq = distance_sq
+            best = facility
+    return best
+
+
+def pick_enemy_facility(
+    world: World, world_pos: Vec2, radius: float = 140.0
+) -> Optional[Facility]:
+    """Return the closest visible hostile facility near ``world_pos``."""
+
+    best: Optional[Facility] = None
+    best_distance_sq = radius * radius
+    for facility in world.facilities:
+        base = facility.host_base
+        faction = base.faction if base is not None else world.player_faction
+        if faction == world.player_faction:
+            continue
+        if not _is_structure_visible(world, facility.position):
             continue
         dx = facility.position[0] - world_pos[0]
         dy = facility.position[1] - world_pos[1]

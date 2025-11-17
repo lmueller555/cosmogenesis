@@ -3,13 +3,15 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Mapping, Optional, Tuple
+from typing import List, Mapping, Optional, Tuple, Union
 
 from .ship_registry import ShipDefinition
 from .production import ProductionQueue, ProductionJob
 from .facility_registry import FacilityDefinition
 
 Vec2 = Tuple[float, float]
+
+CombatTarget = Union["Ship", "Facility", "Base"]
 
 PASSIVE_REPAIR_DELAY = 5.0
 PASSIVE_REPAIR_RATE = 0.005
@@ -175,6 +177,24 @@ class Base(Entity):
             self.max_shields, self.current_shields + repair_rate * dt
         )
 
+    def apply_damage(self, amount: float) -> bool:
+        """Apply ``amount`` of damage, returning ``True`` if destroyed."""
+
+        if amount <= 0.0:
+            return False
+        self._time_since_damage = 0.0
+        if self.current_shields > 0.0:
+            shield_damage = min(amount, self.current_shields)
+            self.current_shields -= shield_damage
+            amount -= shield_damage
+        if amount > 0.0:
+            self.current_health -= amount
+        destroyed = self.current_health <= 0.0
+        if destroyed:
+            self.current_health = 0.0
+            self.current_shields = 0.0
+        return destroyed
+
 
 @dataclass
 class Facility(Entity):
@@ -306,7 +326,7 @@ class Ship(Entity):
     move_target: Optional[Vec2] = None
     move_behavior: str = field(default="move")
     arrival_threshold: float = 6.0
-    target: Optional["Ship"] = None
+    target: Optional[CombatTarget] = None
     _manual_target: bool = field(default=False, init=False, repr=False)
     _weapon_cooldown: float = 0.0
     max_health: float = field(init=False)
@@ -390,10 +410,10 @@ class Ship(Entity):
             return
         self._attack_move_engaged = engaged
 
-    def is_enemy(self, other: "Ship") -> bool:
+    def is_enemy(self, other: CombatTarget) -> bool:
         return self.faction != other.faction
 
-    def in_firing_range(self, other: "Ship") -> bool:
+    def in_firing_range(self, other: Entity) -> bool:
         dx = other.position[0] - self.position[0]
         dy = other.position[1] - self.position[1]
         return dx * dx + dy * dy <= self.firing_range * self.firing_range
@@ -401,7 +421,7 @@ class Ship(Entity):
     def has_manual_target(self) -> bool:
         return self._manual_target
 
-    def force_target(self, target: Optional["Ship"]) -> None:
+    def force_target(self, target: Optional[CombatTarget]) -> None:
         self.target = target
         self._manual_target = target is not None
 

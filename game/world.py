@@ -6,7 +6,16 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from .ai import EnemyAIController
-from .entities import Asteroid, Base, Facility, Planetoid, Ship, WorkerAssignment
+from .entities import (
+    Asteroid,
+    Base,
+    CombatTarget,
+    Entity,
+    Facility,
+    Planetoid,
+    Ship,
+    WorkerAssignment,
+)
 from .ship_registry import (
     ShipDefinition,
     all_ship_definitions,
@@ -154,10 +163,10 @@ class World:
             ship.clear_target()
             ship.set_move_target(destination, behavior=behavior)
 
-    def issue_attack_target(self, target: Ship) -> None:
+    def issue_attack_target(self, target: CombatTarget) -> None:
         """Force selected ships to pursue and attack ``target``."""
 
-        if target not in self.ships:
+        if not self._target_present(target):
             return
         if target.faction == self.player_faction:
             return
@@ -246,6 +255,16 @@ class World:
             if self.selected_facility is facility:
                 self.selected_facility = None
             self._sync_facility_type(facility.facility_type)
+
+    def _handle_base_destroyed(self, base: Base) -> None:
+        if base in self.bases:
+            self.bases.remove(base)
+        if self.selected_base is base:
+            self.selected_base = None
+        associated = [facility for facility in self.facilities if facility.host_base is base]
+        for facility in associated:
+            self.remove_facility(facility)
+        self.facility_jobs = [job for job in self.facility_jobs if job.base is not base]
 
     def set_facility_online(self, facility: Facility, online: bool) -> None:
         if facility not in self.facilities:
@@ -411,10 +430,12 @@ class World:
     def _update_combat(self, dt: float) -> None:
         """Resolve simplistic auto-attacks between hostile ships."""
 
-        destroyed: List[Ship] = []
+        destroyed_ships: List[Ship] = []
+        destroyed_facilities: List[Facility] = []
+        destroyed_bases: List[Base] = []
         for ship in self.ships:
             target = ship.target
-            if target is not None and target not in self.ships:
+            if target is not None and not self._target_present(target):
                 ship.clear_target()
                 target = None
             if target is not None and not ship.is_enemy(target):
@@ -445,7 +466,12 @@ class World:
                 damage = ship.deal_damage()
                 # TODO: Replace with burst fire logic once cadence guidance is available.
                 if target is not None and target.apply_damage(damage):
-                    destroyed.append(target)
+                    if isinstance(target, Ship):
+                        destroyed_ships.append(target)
+                    elif isinstance(target, Facility):
+                        destroyed_facilities.append(target)
+                    elif isinstance(target, Base):
+                        destroyed_bases.append(target)
                     ship.clear_target()
                 self._spawn_beam_visual(ship.position, ship.faction, target)
 
@@ -455,15 +481,19 @@ class World:
                 continue
             damage = facility.fire_weapon()
             if target.apply_damage(damage):
-                destroyed.append(target)
+                destroyed_ships.append(target)
             self._spawn_beam_visual(facility.position, facility.faction, target)
 
-        if destroyed:
-            for ship in destroyed:
+        if destroyed_ships:
+            for ship in destroyed_ships:
                 if ship in self.ships:
                     self.ships.remove(ship)
                 if ship in self.selected_ships:
                     self.selected_ships.remove(ship)
+        for facility in destroyed_facilities:
+            self.remove_facility(facility)
+        for base in destroyed_bases:
+            self._handle_base_destroyed(base)
 
     def _facility_attack_target(self, facility: Facility) -> Optional[Ship]:
         if not facility.online:
@@ -485,6 +515,15 @@ class World:
                 closest_dist = distance_sq
         return closest
 
+    def _target_present(self, target: CombatTarget) -> bool:
+        if isinstance(target, Ship):
+            return target in self.ships
+        if isinstance(target, Facility):
+            return target in self.facilities
+        if isinstance(target, Base):
+            return target in self.bases
+        return False
+
     def _apply_ship_research(self, ship: Ship) -> None:
         if ship.faction != "player":
             return
@@ -505,7 +544,7 @@ class World:
         for base in self.bases:
             self._apply_base_research(base)
 
-    def _spawn_beam_visual(self, start: Vec2, faction: str, target: Ship | None) -> None:
+    def _spawn_beam_visual(self, start: Vec2, faction: str, target: Entity | None) -> None:
         if target is None:
             return
         beam = BeamVisual(
