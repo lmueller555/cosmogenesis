@@ -77,6 +77,25 @@ def pick_ship(world: World, world_pos: Vec2, radius: float = 80.0) -> Optional[S
     return best_ship
 
 
+def pick_enemy_ship(world: World, world_pos: Vec2, radius: float = 80.0) -> Optional[Ship]:
+    """Return the closest visible hostile ship near ``world_pos``."""
+
+    best_ship: Optional[Ship] = None
+    best_distance_sq = radius * radius
+    for ship in world.ships:
+        if ship.faction == world.player_faction:
+            continue
+        if not _is_visible_to_player(world, ship):
+            continue
+        dx = ship.position[0] - world_pos[0]
+        dy = ship.position[1] - world_pos[1]
+        distance_sq = dx * dx + dy * dy
+        if distance_sq <= best_distance_sq:
+            best_distance_sq = distance_sq
+            best_ship = ship
+    return best_ship
+
+
 def pick_base(world: World, world_pos: Vec2, radius: float = 220.0) -> Optional[Base]:
     """Return a nearby base if the cursor is close enough to its footprint."""
 
