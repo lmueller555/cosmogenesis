@@ -16,6 +16,9 @@ class FacilityDefinition:
     build_time: float
     health: int
     shields: int
+    weapon_damage: float = 0.0
+    firing_range: float = 0.0
+    weapon_cooldown: float = 1.0
 
 
 _FACILITIES: Dict[str, FacilityDefinition] = {
@@ -63,6 +66,20 @@ _FACILITIES: Dict[str, FacilityDefinition] = {
         build_time=48.0,
         health=7500,
         shields=4200,
+    ),
+    "SentinelCannon": FacilityDefinition(
+        facility_type="SentinelCannon",
+        name="Sentinel Cannon",
+        description=(
+            "Stationary defensive cannon that automatically targets nearby hostiles."
+        ),
+        resource_cost=500,
+        build_time=38.0,
+        health=5200,
+        shields=2200,
+        weapon_damage=180.0,
+        firing_range=1400.0,
+        weapon_cooldown=2.5,
     ),
 }
 

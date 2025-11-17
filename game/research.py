@@ -44,6 +44,7 @@ class ResearchNode:
     research_time: float
     prerequisites: Tuple[str, ...]
     unlocks_ships: Tuple[str, ...] = field(default_factory=tuple)
+    unlocks_facilities: Tuple[str, ...] = field(default_factory=tuple)
     stat_bonuses: Tuple[StatBonus, ...] = field(default_factory=tuple)
     description: str = ""
 
@@ -224,6 +225,25 @@ class ResearchManager:
             return True
         return any(node.id in self._completed for node in linked_nodes)
 
+    def is_facility_unlocked(self, facility_type: str) -> bool:
+        """Return ``True`` when any node that unlocks ``facility_type`` is complete."""
+
+        linked_nodes = self._facility_unlock_nodes(facility_type)
+        if not linked_nodes:
+            return True
+        return any(node.id in self._completed for node in linked_nodes)
+
+    def facility_unlock_requirements(self, facility_type: str) -> Tuple[str, ...]:
+        """List outstanding research node names needed for ``facility_type``."""
+
+        linked_nodes = self._facility_unlock_nodes(facility_type)
+        if not linked_nodes:
+            return ()
+        pending = [node.name for node in linked_nodes if node.id not in self._completed]
+        if not pending:
+            return ()
+        return tuple(pending)
+
     # ------------------------------------------------------------------
     # Stat bonus aggregation helpers
     # ------------------------------------------------------------------
@@ -269,6 +289,11 @@ class ResearchManager:
                 continue
             self._accumulate_bonus(multipliers, bonus.attribute, bonus.amount)
         return multipliers
+
+    def _facility_unlock_nodes(self, facility_type: str) -> List[ResearchNode]:
+        return [
+            node for node in self._nodes.values() if facility_type in node.unlocks_facilities
+        ]
 
     def economy_bonus(self, *, target: str, attribute: str) -> float:
         """Aggregate economy modifiers for ``target``/``attribute`` combinations."""
@@ -814,6 +839,18 @@ def _register_defense_grid(nodes: Dict[str, ResearchNode]) -> None:
             ),
         ),
         description="Improves defense battery targeting algorithms.",
+    )
+    nodes["DG_SENTINEL_CANNON_SCHEMATICS"] = ResearchNode(
+        id="DG_SENTINEL_CANNON_SCHEMATICS",
+        name="Sentinel Cannon Schematics",
+        tree=tree,
+        tier=2,
+        host_facility_type=facility,
+        resource_cost=420,
+        research_time=55.0,
+        prerequisites=("DG_STATION_HARDENING_I",),
+        unlocks_facilities=("SentinelCannon",),
+        description="Unlocks blueprints for early defensive cannon emplacements.",
     )
     nodes["DG_DEEP_SPACE_GRID"] = ResearchNode(
         id="DG_DEEP_SPACE_GRID",

@@ -40,6 +40,7 @@ FACILITY_DISPLAY_NAMES = {
     "FleetForge": "Fleet Forge",
     "ResearchNexus": "Research Nexus",
     "DefenseGridNode": "Defense Grid Node",
+    "SentinelCannon": "Sentinel Cannon",
 }
 
 
@@ -136,6 +137,7 @@ class World:
         self._update_facility_construction(dt)
         for facility in self.facilities:
             facility.tick_passive_repair(dt)
+            facility.tick_weapon_cooldown(dt)
         self._update_combat(dt)
         self._update_beam_visuals(dt)
         completed_research = self.research_manager.update(dt)
@@ -423,7 +425,16 @@ class World:
                 if target is not None and target.apply_damage(damage):
                     destroyed.append(target)
                     ship.clear_target()
-                self._spawn_beam_visual(ship, target)
+                self._spawn_beam_visual(ship.position, ship.faction, target)
+
+        for facility in self.facilities:
+            target = self._facility_attack_target(facility)
+            if target is None or not facility.ready_to_fire():
+                continue
+            damage = facility.fire_weapon()
+            if target.apply_damage(damage):
+                destroyed.append(target)
+            self._spawn_beam_visual(facility.position, facility.faction, target)
 
         if destroyed:
             for ship in destroyed:
@@ -431,6 +442,26 @@ class World:
                     self.ships.remove(ship)
                 if ship in self.selected_ships:
                     self.selected_ships.remove(ship)
+
+    def _facility_attack_target(self, facility: Facility) -> Optional[Ship]:
+        if not facility.online:
+            return None
+        if facility.weapon_damage_value <= 0.0 or facility.firing_range_value <= 0.0:
+            return None
+        owner = facility.faction
+        range_sq = facility.firing_range_value * facility.firing_range_value
+        closest: Optional[Ship] = None
+        closest_dist = range_sq
+        for ship in self.ships:
+            if ship.faction == owner:
+                continue
+            distance_sq = self._distance_sq(ship.position, facility.position)
+            if distance_sq > range_sq:
+                continue
+            if closest is None or distance_sq < closest_dist:
+                closest = ship
+                closest_dist = distance_sq
+        return closest
 
     def _apply_ship_research(self, ship: Ship) -> None:
         if ship.faction != "player":
@@ -452,13 +483,13 @@ class World:
         for base in self.bases:
             self._apply_base_research(base)
 
-    def _spawn_beam_visual(self, attacker: Ship, target: Ship | None) -> None:
+    def _spawn_beam_visual(self, start: Vec2, faction: str, target: Ship | None) -> None:
         if target is None:
             return
         beam = BeamVisual(
-            start=(attacker.position[0], attacker.position[1]),
+            start=(start[0], start[1]),
             end=(target.position[0], target.position[1]),
-            faction=attacker.faction,
+            faction=faction,
         )
         self.beam_visuals.append(beam)
 
@@ -685,6 +716,9 @@ class World:
             return False, "Already built"
         if self.facility_under_construction(base, definition.facility_type):
             return False, "Under construction"
+        unlocked, requirement = self._facility_unlock_status(definition.facility_type)
+        if not unlocked:
+            return False, requirement or "Requires research"
         if self.resources < definition.resource_cost:
             shortfall = int(max(0.0, math.ceil(definition.resource_cost - self.resources)))
             if shortfall > 0:
@@ -778,6 +812,17 @@ class World:
             base.position[0] + math.cos(angle) * radius,
             base.position[1] + math.sin(angle) * radius,
         )
+
+    def _facility_unlock_status(self, facility_type: str) -> Tuple[bool, Optional[str]]:
+        if self.research_manager.is_facility_unlocked(facility_type):
+            return True, None
+        pending = self.research_manager.facility_unlock_requirements(facility_type)
+        if not pending:
+            return True, None
+        if len(pending) == 1:
+            return False, f"Requires {pending[0]}"
+        prereq_text = ", ".join(pending)
+        return False, f"Requires {prereq_text}"
 
     def _advance_worker_construction(
         self, job: "FacilityConstructionJob", dt: float
