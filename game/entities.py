@@ -15,10 +15,10 @@ PASSIVE_REPAIR_DELAY = 5.0
 PASSIVE_REPAIR_RATE = 0.005
 
 
-def _passive_repair_per_second(max_health: float) -> float:
-    if max_health <= 0.0:
+def _passive_repair_per_second(max_value: float) -> float:
+    if max_value <= 0.0:
         return 0.0
-    return float(math.ceil(PASSIVE_REPAIR_RATE * max_health))
+    return float(math.ceil(PASSIVE_REPAIR_RATE * max_value))
 
 
 @dataclass
@@ -164,15 +164,15 @@ class Base(Entity):
         if dt <= 0.0:
             return
         self._time_since_damage += dt
-        if self.current_health >= self.max_health:
+        if self.current_shields >= self.max_shields:
             return
         if self._time_since_damage < PASSIVE_REPAIR_DELAY:
             return
-        repair_rate = _passive_repair_per_second(self.max_health)
+        repair_rate = _passive_repair_per_second(self.max_shields)
         if repair_rate <= 0.0:
             return
-        self.current_health = min(
-            self.max_health, self.current_health + repair_rate * dt
+        self.current_shields = min(
+            self.max_shields, self.current_shields + repair_rate * dt
         )
 
 
@@ -253,15 +253,15 @@ class Facility(Entity):
         if dt <= 0.0:
             return
         self._time_since_damage += dt
-        if self.current_health >= self.max_health:
+        if self.current_shields >= self.max_shields:
             return
         if self._time_since_damage < PASSIVE_REPAIR_DELAY:
             return
-        repair_rate = _passive_repair_per_second(self.max_health)
+        repair_rate = _passive_repair_per_second(self.max_shields)
         if repair_rate <= 0.0:
             return
-        self.current_health = min(
-            self.max_health, self.current_health + repair_rate * dt
+        self.current_shields = min(
+            self.max_shields, self.current_shields + repair_rate * dt
         )
 
     def tick_weapon_cooldown(self, dt: float) -> None:
@@ -478,15 +478,15 @@ class Ship(Entity):
         if dt <= 0.0:
             return
         self._time_since_damage += dt
-        if self.current_health >= self.max_health:
+        if self.current_shields >= self.max_shields:
             return
         if self._time_since_damage < PASSIVE_REPAIR_DELAY:
             return
-        repair_rate = _passive_repair_per_second(self.max_health)
+        repair_rate = _passive_repair_per_second(self.max_shields)
         if repair_rate <= 0.0:
             return
-        self.current_health = min(
-            self.max_health, self.current_health + repair_rate * dt
+        self.current_shields = min(
+            self.max_shields, self.current_shields + repair_rate * dt
         )
 
     def can_fire(self) -> bool:
