@@ -434,6 +434,7 @@ class World:
         destroyed_facilities: List[Facility] = []
         destroyed_bases: List[Base] = []
         for ship in self.ships:
+            retarget_due = ship.should_auto_retarget(dt)
             target = ship.target
             if target is not None and not self._target_present(target):
                 ship.clear_target()
@@ -442,14 +443,17 @@ class World:
                 ship.clear_target()
                 target = None
             if target is None:
-                ship.acquire_target(self.ships)
+                ship.acquire_target(self.ships, self.facilities, self.bases)
                 target = ship.target
             elif not ship.in_firing_range(target):
                 if ship.has_manual_target():
                     ship.set_move_target(target.position, behavior="attack")
                 else:
-                    ship.acquire_target(self.ships)
+                    ship.acquire_target(self.ships, self.facilities, self.bases)
                     target = ship.target
+            elif retarget_due:
+                ship.acquire_target(self.ships, self.facilities, self.bases)
+                target = ship.target
             if target is None:
                 ship.hold_position_for_attack(False)
                 continue
