@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Mapping, Optional, Tuple, Union
+from typing import Iterable, List, Mapping, Optional, Tuple, Union
 
 from .ship_registry import ShipDefinition
 from .production import ProductionQueue, ProductionJob
@@ -328,6 +328,8 @@ class Ship(Entity):
     arrival_threshold: float = 6.0
     target: Optional[CombatTarget] = None
     _manual_target: bool = field(default=False, init=False, repr=False)
+    _auto_retarget_timer: float = field(default=0.0, init=False, repr=False)
+    _auto_retarget_interval: float = field(default=1.0, init=False, repr=False)
     _weapon_cooldown: float = 0.0
     max_health: float = field(init=False)
     max_shields: float = field(init=False)
@@ -424,27 +426,62 @@ class Ship(Entity):
     def force_target(self, target: Optional[CombatTarget]) -> None:
         self.target = target
         self._manual_target = target is not None
+        self._auto_retarget_timer = 0.0
 
-    def acquire_target(self, candidates: List["Ship"]) -> None:
-        """Pick the closest valid enemy from ``candidates``."""
+    def acquire_target(
+        self,
+        ships: Iterable["Ship"],
+        facilities: Iterable["Facility"],
+        bases: Iterable["Base"],
+    ) -> None:
+        """Pick the closest valid enemy in range from ships/facilities/bases."""
 
-        best_target: Optional[Ship] = None
+        range_sq = self.firing_range * self.firing_range
+        best_target: Optional[CombatTarget] = None
         best_distance_sq = float("inf")
-        for ship in candidates:
-            if not self.is_enemy(ship):
-                continue
-            dx = ship.position[0] - self.position[0]
-            dy = ship.position[1] - self.position[1]
+
+        def consider(candidate: CombatTarget) -> None:
+            nonlocal best_target, best_distance_sq
+            if candidate is self:
+                return
+            if not self.is_enemy(candidate):
+                return
+            dx = candidate.position[0] - self.position[0]
+            dy = candidate.position[1] - self.position[1]
             distance_sq = dx * dx + dy * dy
-            if distance_sq <= self.firing_range * self.firing_range and distance_sq < best_distance_sq:
+            if distance_sq <= range_sq and distance_sq < best_distance_sq:
+                best_target = candidate
                 best_distance_sq = distance_sq
-                best_target = ship
+
+        for ship in ships:
+            consider(ship)
+        for facility in facilities:
+            consider(facility)
+        for base in bases:
+            consider(base)
+
         self.target = best_target
         self._manual_target = False
+        self._auto_retarget_timer = 0.0
 
     def clear_target(self) -> None:
         self.target = None
         self._manual_target = False
+        self._auto_retarget_timer = 0.0
+
+    def should_auto_retarget(self, dt: float) -> bool:
+        """Return ``True`` if it's time to refresh auto-targeting."""
+
+        if dt <= 0.0:
+            return False
+        if self._manual_target:
+            self._auto_retarget_timer = 0.0
+            return False
+        self._auto_retarget_timer += dt
+        if self._auto_retarget_timer >= self._auto_retarget_interval:
+            self._auto_retarget_timer = 0.0
+            return True
+        return False
 
     def update(self, dt: float) -> None:
         """Advance ship state – currently only simple point-to-point movement."""
