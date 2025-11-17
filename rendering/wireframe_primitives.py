@@ -218,6 +218,12 @@ def _loop_segments(vertex_count: int) -> List[Tuple[int, int]]:
     return [(i, (i + 1) % vertex_count) for i in range(vertex_count)]
 
 
+def _rotate_xy_clockwise(vertices: Sequence[Vec2]) -> List[Vec2]:
+    """Rotate ``vertices`` 90 degrees clockwise around the origin."""
+
+    return [(y, -x) for x, y in vertices]
+
+
 def create_spearling_mesh() -> WireframeMesh:
     """Arrowhead strike craft per `ship_guidance`."""
 
@@ -300,7 +306,8 @@ def create_daggerwing_mesh() -> WireframeMesh:
 def create_skimmer_drone_mesh() -> WireframeMesh:
     """Utility worker craft with a bulbous cargo pod."""
 
-    fuselage_outline: List[Vec2] = [
+    fuselage_outline: List[Vec2] = _rotate_xy_clockwise(
+        [
         (0.0, 22.0),
         (-6.0, 12.0),
         (-4.0, 6.0),
@@ -319,14 +326,17 @@ def create_skimmer_drone_mesh() -> WireframeMesh:
         (3.0, 0.0),
         (4.0, 6.0),
         (6.0, 12.0),
-    ]
+        ]
+    )
 
-    cargo_pod = [
+    cargo_pod = _rotate_xy_clockwise(
+        [
         (-6.0, -22.0),
         (-6.0, -34.0),
         (6.0, -22.0),
         (6.0, -34.0),
-    ]
+        ]
+    )
 
     vertices = fuselage_outline + cargo_pod
     segments = _loop_segments(len(fuselage_outline))
