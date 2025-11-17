@@ -151,7 +151,21 @@ class World:
         """Send every selected ship toward ``destination``."""
 
         for ship in self.selected_ships:
+            ship.clear_target()
             ship.set_move_target(destination, behavior=behavior)
+
+    def issue_attack_target(self, target: Ship) -> None:
+        """Force selected ships to pursue and attack ``target``."""
+
+        if target not in self.ships:
+            return
+        if target.faction == self.player_faction:
+            return
+        for ship in self.selected_ships:
+            if ship.faction != self.player_faction:
+                continue
+            ship.force_target(target)
+            ship.set_move_target(target.position, behavior="attack")
 
     def queue_ship(self, base: Base, ship_name: str) -> bool:
         """Queue ``ship_name`` at ``base`` if research + resources allow it."""
@@ -399,13 +413,23 @@ class World:
 
         destroyed: List[Ship] = []
         for ship in self.ships:
-            if ship.target is None or ship.target not in self.ships or not ship.in_firing_range(ship.target):
-                ship.acquire_target(self.ships)
-            if ship.target is None:
-                ship.hold_position_for_attack(False)
-                continue
-            if not ship.is_enemy(ship.target):
+            target = ship.target
+            if target is not None and target not in self.ships:
                 ship.clear_target()
+                target = None
+            if target is not None and not ship.is_enemy(target):
+                ship.clear_target()
+                target = None
+            if target is None:
+                ship.acquire_target(self.ships)
+                target = ship.target
+            elif not ship.in_firing_range(target):
+                if ship.has_manual_target():
+                    ship.set_move_target(target.position, behavior="attack")
+                else:
+                    ship.acquire_target(self.ships)
+                    target = ship.target
+            if target is None:
                 ship.hold_position_for_attack(False)
                 continue
             if ship.weapon_damage_value <= 0.0:
@@ -414,12 +438,10 @@ class World:
             engaged = (
                 ship.move_behavior == "attack"
                 and ship.move_target is not None
-                and ship.target is not None
-                and ship.in_firing_range(ship.target)
+                and ship.in_firing_range(target)
             )
             ship.hold_position_for_attack(engaged)
             if ship.can_fire():
-                target = ship.target
                 damage = ship.deal_damage()
                 # TODO: Replace with burst fire logic once cadence guidance is available.
                 if target is not None and target.apply_damage(damage):

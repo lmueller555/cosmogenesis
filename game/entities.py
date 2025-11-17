@@ -307,6 +307,7 @@ class Ship(Entity):
     move_behavior: str = field(default="move")
     arrival_threshold: float = 6.0
     target: Optional["Ship"] = None
+    _manual_target: bool = field(default=False, init=False, repr=False)
     _weapon_cooldown: float = 0.0
     max_health: float = field(init=False)
     max_shields: float = field(init=False)
@@ -397,6 +398,13 @@ class Ship(Entity):
         dy = other.position[1] - self.position[1]
         return dx * dx + dy * dy <= self.firing_range * self.firing_range
 
+    def has_manual_target(self) -> bool:
+        return self._manual_target
+
+    def force_target(self, target: Optional["Ship"]) -> None:
+        self.target = target
+        self._manual_target = target is not None
+
     def acquire_target(self, candidates: List["Ship"]) -> None:
         """Pick the closest valid enemy from ``candidates``."""
 
@@ -412,9 +420,11 @@ class Ship(Entity):
                 best_distance_sq = distance_sq
                 best_target = ship
         self.target = best_target
+        self._manual_target = False
 
     def clear_target(self) -> None:
         self.target = None
+        self._manual_target = False
 
     def update(self, dt: float) -> None:
         """Advance ship state – currently only simple point-to-point movement."""
