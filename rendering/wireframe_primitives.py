@@ -142,7 +142,7 @@ def create_asteroid_mesh(radius: float = 24.0) -> WireframeMesh:
 
 
 def create_astral_citadel_mesh() -> WireframeMesh:
-    """Radially symmetric citadel based on the Astral Citadel concept art."""
+    """Space-station inspired Astral Citadel with a T-shaped profile."""
 
     vertices: List[Vec2] = []
     segments: List[Tuple[int, int]] = []
@@ -155,12 +155,33 @@ def create_astral_citadel_mesh() -> WireframeMesh:
             segments.append((start + i, start + ((i + 1) % count)))
         return start, count
 
-    def add_circle(radius: float, count: int, rotation: float = 0.0) -> Tuple[int, int]:
+    def add_rectangle(
+        center_x: float, center_y: float, width: float, height: float
+    ) -> Tuple[int, int]:
+        half_w = width / 2.0
+        half_h = height / 2.0
+        return add_polygon(
+            [
+                (center_x - half_w, center_y - half_h),
+                (center_x + half_w, center_y - half_h),
+                (center_x + half_w, center_y + half_h),
+                (center_x - half_w, center_y + half_h),
+            ]
+        )
+
+    def add_circle(
+        radius: float,
+        count: int,
+        *,
+        center: Vec2 = (0.0, 0.0),
+        rotation: float = 0.0,
+    ) -> Tuple[int, int]:
+        cx, cy = center
         step = (2.0 * math.pi) / count
         points = [
             (
-                math.cos(rotation + (step * i)) * radius,
-                math.sin(rotation + (step * i)) * radius,
+                cx + math.cos(rotation + (step * i)) * radius,
+                cy + math.sin(rotation + (step * i)) * radius,
             )
             for i in range(count)
         ]
@@ -169,7 +190,7 @@ def create_astral_citadel_mesh() -> WireframeMesh:
     def connect_scaled(inner: Tuple[int, int], outer: Tuple[int, int]) -> None:
         inner_start, inner_count = inner
         outer_start, outer_count = outer
-        factor = outer_count // inner_count
+        factor = max(1, outer_count // inner_count)
         for i in range(outer_count):
             segments.append((outer_start + i, inner_start + (i // factor)))
 
@@ -180,88 +201,90 @@ def create_astral_citadel_mesh() -> WireframeMesh:
         for i in range(count_a):
             segments.append((start_a + i, start_b + i))
 
-    def rotate_points(points: Sequence[Vec2], angle: float) -> List[Vec2]:
-        cos_a = math.cos(angle)
-        sin_a = math.sin(angle)
-        return [
-            (x * cos_a - y * sin_a, x * sin_a + y * cos_a) for x, y in points
-        ]
+    def add_spine_lights(center_y_values: Sequence[float]) -> None:
+        for y in center_y_values:
+            panel = add_rectangle(0.0, y, 18.0, 6.0)
+            # Cross braces inside the light strip to emphasize glow panels.
+            segments.append((panel[0], panel[0] + 2))
+            segments.append((panel[0] + 1, panel[0] + 3))
 
-    def add_rotated_profile(points: Sequence[Vec2], angles: Sequence[float]) -> None:
-        for angle in angles:
-            add_polygon(rotate_points(points, angle))
+    def add_arm_light_row(center_x: float, y: float, span: float, count: int) -> None:
+        spacing = span / (count - 1)
+        for i in range(count):
+            x = center_x + (spacing * i)
+            light = add_rectangle(x, y, 12.0, 5.0)
+            segments.append((light[0], light[0] + 2))
+            segments.append((light[0] + 1, light[0] + 3))
 
-    # --- Concentric defense rings ---
-    inner_core = add_circle(18.0, 8, rotation=math.pi / 8.0)
-    mid_core = add_circle(32.0, 16)
-    inner_ring = add_circle(68.0, 32)
-    support_ring = add_circle(96.0, 32)
-    outer_ring = add_circle(132.0, 32)
-    halo_ring = add_circle(170.0, 32)
+    # --- Central spine ---
+    spine_outer = add_rectangle(0.0, -20.0, 64.0, 360.0)
+    spine_inner = add_rectangle(0.0, -20.0, 36.0, 320.0)
+    connect_one_to_one(spine_outer, spine_inner)
 
-    connect_scaled(inner_core, mid_core)
-    connect_scaled(mid_core, inner_ring)
-    connect_one_to_one(inner_ring, support_ring)
-    connect_one_to_one(support_ring, outer_ring)
-    connect_one_to_one(outer_ring, halo_ring)
+    # Reinforcement rings across the tube
+    for offset in (-150.0, -80.0, -10.0, 60.0, 130.0):
+        add_rectangle(0.0, offset, 72.0, 22.0)
 
-    # Reinforcing diagonals back into the hub
-    for i in range(8):
-        inner_index = inner_core[0] + i
-        ring_index = inner_ring[0] + (i * 4)
-        segments.append((inner_index, ring_index))
+    # Command crown and docking collar at the top of the T shape
+    crown_outer = add_rectangle(0.0, 140.0, 110.0, 90.0)
+    crown_inner = add_rectangle(0.0, 140.0, 70.0, 52.0)
+    connect_one_to_one(crown_outer, crown_inner)
 
-    # --- Major cardinal arms ---
-    cardinal_angles = [0.0, math.pi / 2.0, math.pi, 3.0 * math.pi / 2.0]
-    arm_profile: List[Vec2] = [
-        (34.0, 32.0),
-        (94.0, 52.0),
-        (118.0, 44.0),
-        (156.0, 44.0),
-        (156.0, -44.0),
-        (118.0, -44.0),
-        (94.0, -52.0),
-        (34.0, -32.0),
-    ]
-    add_rotated_profile(arm_profile, cardinal_angles)
+    # Lower thruster cap to close the long tube visually
+    thruster = add_polygon(
+        [(-50.0, -220.0), (50.0, -220.0), (34.0, -260.0), (-34.0, -260.0)]
+    )
+    connect_scaled(thruster, spine_outer)
 
-    # Narrow antenna pylons that extend beyond the halo ring
-    antenna_profile: List[Vec2] = [
-        (150.0, 12.0),
-        (196.0, 12.0),
-        (196.0, -12.0),
-        (150.0, -12.0),
-    ]
-    add_rotated_profile(antenna_profile, cardinal_angles)
+    # --- Habitation arms ---
+    left_arm = add_rectangle(-135.0, 120.0, 190.0, 44.0)
+    right_arm = add_rectangle(135.0, 120.0, 190.0, 44.0)
+    connect_scaled(spine_outer, left_arm)
+    connect_scaled(spine_outer, right_arm)
 
-    # --- Diagonal braces and outer bastions ---
-    diagonal_angles = [
-        math.pi / 4.0,
-        3.0 * math.pi / 4.0,
-        5.0 * math.pi / 4.0,
-        7.0 * math.pi / 4.0,
-    ]
-    brace_profile: List[Vec2] = [
-        (30.0, 10.0),
-        (80.0, 30.0),
-        (80.0, -30.0),
-        (30.0, -10.0),
-    ]
-    add_rotated_profile(brace_profile, diagonal_angles)
+    left_adapter = add_rectangle(-220.0, 120.0, 70.0, 70.0)
+    right_adapter = add_rectangle(220.0, 120.0, 70.0, 70.0)
+    connect_one_to_one(left_arm, left_adapter)
+    connect_one_to_one(right_arm, right_adapter)
 
-    bastion_profile: List[Vec2] = [
-        (110.0, 22.0),
-        (138.0, 38.0),
-        (110.0, 54.0),
-        (82.0, 38.0),
-    ]
-    add_rotated_profile(bastion_profile, diagonal_angles)
+    # Cylindrical habitation modules
+    module_radius_outer = 78.0
+    module_radius_inner = 56.0
+    left_module_outer = add_circle(
+        module_radius_outer, 32, center=(-300.0, 120.0), rotation=math.pi / 32.0
+    )
+    left_module_inner = add_circle(module_radius_inner, 24, center=(-300.0, 120.0))
+    right_module_outer = add_circle(
+        module_radius_outer, 32, center=(300.0, 120.0), rotation=math.pi / 32.0
+    )
+    right_module_inner = add_circle(module_radius_inner, 24, center=(300.0, 120.0))
 
-    # Connect bastions into the halo ring for added structure
-    for angle_index in range(len(diagonal_angles)):
-        halo_idx = halo_ring[0] + (angle_index * 8 + 4)
-        inner_idx = support_ring[0] + (angle_index * 8 + 4)
-        segments.append((halo_idx, inner_idx))
+    connect_scaled(left_module_inner, left_module_outer)
+    connect_scaled(right_module_inner, right_module_outer)
+    connect_scaled(left_adapter, left_module_outer)
+    connect_scaled(right_adapter, right_module_outer)
+
+    # Module endcaps and conduits to imply layered cylinders
+    for module_center in (-300.0, 300.0):
+        cap = add_rectangle(module_center, 120.0, 40.0, 120.0)
+        connect_scaled(cap, left_module_outer if module_center < 0 else right_module_outer)
+
+    # --- Glowing light details ---
+    add_spine_lights(y for y in range(-150, 151, 30))
+    add_arm_light_row(-210.0, 140.0, 120.0, 5)
+    add_arm_light_row(90.0, 140.0, 120.0, 5)
+
+    # Module light bands
+    for module_center in (-300.0, 300.0):
+        light_ring = add_circle(40.0, 12, center=(module_center, 120.0))
+        connect_scaled(
+            light_ring,
+            left_module_inner if module_center < 0 else right_module_inner,
+        )
+        # Radial lights to suggest glowing conduits
+        start, count = light_ring
+        for i in range(count):
+            segments.append((start + i, start + ((i + 3) % count)))
 
     return _extrude_outline(vertices, segments, height=140.0)
 
