@@ -1,7 +1,7 @@
 """Wireframe renderer for Cosmogenesis entities."""
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from OpenGL import GL as gl
 
@@ -195,29 +195,35 @@ class WireframeRenderer:
         elevation: float = 0.0,
         rotation_degrees: float = 0.0,
     ) -> None:
-        gl.glColor4f(*color)
-        gl.glBegin(gl.GL_LINES)
         rad = math.radians(rotation_degrees)
         cos_theta = math.cos(rad)
         sin_theta = math.sin(rad)
-        for start_index, end_index in mesh.segments:
-            sx, sy, sz = mesh.vertices[start_index]
-            ex, ey, ez = mesh.vertices[end_index]
 
-            start_world = (
-                position[0] + (sx * cos_theta - sz * sin_theta) * scale,
-                elevation + sy * scale,
-                position[1] + (sx * sin_theta + sz * cos_theta) * scale,
-            )
-            end_world = (
-                position[0] + (ex * cos_theta - ez * sin_theta) * scale,
-                elevation + ey * scale,
-                position[1] + (ex * sin_theta + ez * cos_theta) * scale,
-            )
+        transformed: List[Tuple[float, float, float]] = []
+        for vx, vy, vz in mesh.vertices:
+            world_x = position[0] + (vx * cos_theta - vz * sin_theta) * scale
+            world_y = elevation + vy * scale
+            world_z = position[1] + (vx * sin_theta + vz * cos_theta) * scale
+            transformed.append((world_x, world_y, world_z))
 
-            gl.glVertex3f(*start_world)
-            gl.glVertex3f(*end_world)
-        gl.glEnd()
+        def _emit(segments: Sequence[Tuple[int, int]], seg_color: Tuple[float, float, float, float]) -> None:
+            if not segments:
+                return
+            gl.glColor4f(*seg_color)
+            gl.glBegin(gl.GL_LINES)
+            for start_index, end_index in segments:
+                gl.glVertex3f(*transformed[start_index])
+                gl.glVertex3f(*transformed[end_index])
+            gl.glEnd()
+
+        _emit(mesh.segments, color)
+
+        if mesh.colored_segments:
+            grouped: Dict[Tuple[float, float, float, float], List[Tuple[int, int]]] = {}
+            for segment in mesh.colored_segments:
+                grouped.setdefault(segment.color, []).append((segment.start, segment.end))
+            for segment_color, pairs in grouped.items():
+                _emit(pairs, segment_color)
 
     @staticmethod
     def _compute_mesh_bounds(mesh: WireframeMesh) -> Tuple[float, float, float, float]:
