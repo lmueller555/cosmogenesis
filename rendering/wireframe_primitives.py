@@ -144,6 +144,7 @@ def create_asteroid_mesh(radius: float = 24.0) -> WireframeMesh:
 def create_astral_citadel_mesh() -> WireframeMesh:
     """Space-station inspired Astral Citadel with a T-shaped profile."""
 
+    scale_factor = 0.75  # Shrink overall footprint by ~25% while keeping silhouette
     vertices: List[Vec2] = []
     segments: List[Tuple[int, int]] = []
 
@@ -222,7 +223,7 @@ def create_astral_citadel_mesh() -> WireframeMesh:
     connect_one_to_one(spine_outer, spine_inner)
 
     # Reinforcement rings across the tube
-    for offset in (-150.0, -80.0, -10.0, 60.0, 130.0):
+    for offset in (-140.0, -40.0, 60.0):
         add_rectangle(0.0, offset, 72.0, 22.0)
 
     # Command crown and docking collar at the top of the T shape
@@ -251,13 +252,13 @@ def create_astral_citadel_mesh() -> WireframeMesh:
     module_radius_outer = 78.0
     module_radius_inner = 56.0
     left_module_outer = add_circle(
-        module_radius_outer, 32, center=(-300.0, 120.0), rotation=math.pi / 32.0
+        module_radius_outer, 16, center=(-300.0, 120.0), rotation=math.pi / 16.0
     )
-    left_module_inner = add_circle(module_radius_inner, 24, center=(-300.0, 120.0))
+    left_module_inner = add_circle(module_radius_inner, 12, center=(-300.0, 120.0))
     right_module_outer = add_circle(
-        module_radius_outer, 32, center=(300.0, 120.0), rotation=math.pi / 32.0
+        module_radius_outer, 16, center=(300.0, 120.0), rotation=math.pi / 16.0
     )
-    right_module_inner = add_circle(module_radius_inner, 24, center=(300.0, 120.0))
+    right_module_inner = add_circle(module_radius_inner, 12, center=(300.0, 120.0))
 
     connect_scaled(left_module_inner, left_module_outer)
     connect_scaled(right_module_inner, right_module_outer)
@@ -270,13 +271,13 @@ def create_astral_citadel_mesh() -> WireframeMesh:
         connect_scaled(cap, left_module_outer if module_center < 0 else right_module_outer)
 
     # --- Glowing light details ---
-    add_spine_lights(y for y in range(-150, 151, 30))
-    add_arm_light_row(-210.0, 140.0, 120.0, 5)
-    add_arm_light_row(90.0, 140.0, 120.0, 5)
+    add_spine_lights(y for y in range(-150, 151, 60))
+    add_arm_light_row(-210.0, 140.0, 120.0, 3)
+    add_arm_light_row(90.0, 140.0, 120.0, 3)
 
     # Module light bands
     for module_center in (-300.0, 300.0):
-        light_ring = add_circle(40.0, 12, center=(module_center, 120.0))
+        light_ring = add_circle(40.0, 6, center=(module_center, 120.0))
         connect_scaled(
             light_ring,
             left_module_inner if module_center < 0 else right_module_inner,
@@ -284,9 +285,9 @@ def create_astral_citadel_mesh() -> WireframeMesh:
         # Radial lights to suggest glowing conduits
         start, count = light_ring
         for i in range(count):
-            segments.append((start + i, start + ((i + 3) % count)))
+            segments.append((start + i, start + ((i + 2) % count)))
 
-    return _extrude_outline(vertices, segments, height=140.0)
+    return _extrude_outline(vertices, segments, height=140.0).transformed(scale=scale_factor)
 
 
 # --- Ship Meshes ---------------------------------------------------------
