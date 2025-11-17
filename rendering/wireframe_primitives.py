@@ -11,11 +11,21 @@ Vec3 = Tuple[float, float, float]
 
 
 @dataclass(frozen=True)
+class ColoredSegment:
+    """Line segment rendered with its own RGBA color."""
+
+    start: int
+    end: int
+    color: Tuple[float, float, float, float]
+
+
+@dataclass(frozen=True)
 class WireframeMesh:
     """Simple container for line segments connecting vertex indices."""
 
     vertices: Sequence[Vec3]
     segments: Sequence[Tuple[int, int]]
+    colored_segments: Sequence[ColoredSegment] = ()
 
     def transformed(
         self,
@@ -29,7 +39,69 @@ class WireframeMesh:
             ((x * scale) + ox, (y * scale) + oy, (z * scale) + oz)
             for x, y, z in self.vertices
         ]
-        return WireframeMesh(transformed_vertices, self.segments)
+        return WireframeMesh(transformed_vertices, self.segments, self.colored_segments)
+
+
+GUN_COLOR: Tuple[float, float, float, float] = (1.0, 0.2, 0.2, 1.0)
+
+
+@dataclass(frozen=True)
+class GunPlacement:
+    center_x: float
+    base_z: float
+    length: float
+    spread: float = 2.5
+    y_offset: float = 0.0
+    tip_bridge: bool = False
+
+
+def _with_colored_segments(
+    mesh: WireframeMesh,
+    segments: Sequence[Tuple[Vec3, Vec3]],
+    *,
+    color: Tuple[float, float, float, float] = GUN_COLOR,
+) -> WireframeMesh:
+    if not segments:
+        return mesh
+
+    vertices = list(mesh.vertices)
+    colored = list(mesh.colored_segments)
+    for start, end in segments:
+        start_index = len(vertices)
+        vertices.append(start)
+        vertices.append(end)
+        colored.append(ColoredSegment(start_index, start_index + 1, color))
+    return WireframeMesh(vertices, mesh.segments, colored)
+
+
+def _forward_turret_segments(placement: GunPlacement) -> List[Tuple[Vec3, Vec3]]:
+    half_spread = placement.spread / 2.0
+    base_z = placement.base_z
+    tip_z = placement.base_z + placement.length
+    y = placement.y_offset
+    left_x = placement.center_x - half_spread
+    right_x = placement.center_x + half_spread
+
+    segments: List[Tuple[Vec3, Vec3]] = [
+        ((left_x, y, base_z), (left_x, y, tip_z)),
+        ((right_x, y, base_z), (right_x, y, tip_z)),
+        ((left_x, y, base_z), (right_x, y, base_z)),
+    ]
+    if placement.tip_bridge:
+        segments.append(((left_x, y, tip_z), (right_x, y, tip_z)))
+    return segments
+
+
+def _apply_forward_guns(
+    mesh: WireframeMesh, placements: Sequence[GunPlacement]
+) -> WireframeMesh:
+    if not placements:
+        return mesh
+
+    segments: List[Tuple[Vec3, Vec3]] = []
+    for placement in placements:
+        segments.extend(_forward_turret_segments(placement))
+    return _with_colored_segments(mesh, segments)
 
 
 def _extrude_outline(
@@ -327,7 +399,12 @@ def create_spearling_mesh() -> WireframeMesh:
         (3, 7),
         (4, 7),
     ]
-    return _extrude_outline(vertices, segments, height=8.0)
+    mesh = _extrude_outline(vertices, segments, height=8.0)
+    gun_mounts = [
+        GunPlacement(center_x=-4.5, base_z=4.0, length=12.0, spread=2.0, tip_bridge=True),
+        GunPlacement(center_x=4.5, base_z=4.0, length=12.0, spread=2.0, tip_bridge=True),
+    ]
+    return _apply_forward_guns(mesh, gun_mounts)
 
 
 def create_wisp_mesh() -> WireframeMesh:
@@ -354,7 +431,12 @@ def create_wisp_mesh() -> WireframeMesh:
         (7, 8),
         (6, 8),
     ]
-    return _extrude_outline(vertices, segments, height=10.0)
+    mesh = _extrude_outline(vertices, segments, height=10.0)
+    gun_mounts = [
+        GunPlacement(center_x=0.0, base_z=2.0, length=16.0, spread=1.4, tip_bridge=True),
+        GunPlacement(center_x=0.0, base_z=-12.0, length=8.0, spread=1.6),
+    ]
+    return _apply_forward_guns(mesh, gun_mounts)
 
 
 def create_daggerwing_mesh() -> WireframeMesh:
@@ -379,7 +461,13 @@ def create_daggerwing_mesh() -> WireframeMesh:
         (0, 2),
         (0, 4),
     ]
-    return _extrude_outline(vertices, segments, height=12.0)
+    mesh = _extrude_outline(vertices, segments, height=12.0)
+    gun_mounts = [
+        GunPlacement(center_x=-16.0, base_z=4.0, length=14.0, spread=2.4, tip_bridge=True),
+        GunPlacement(center_x=16.0, base_z=4.0, length=14.0, spread=2.4, tip_bridge=True),
+        GunPlacement(center_x=0.0, base_z=6.0, length=18.0, spread=3.2, tip_bridge=True),
+    ]
+    return _apply_forward_guns(mesh, gun_mounts)
 
 
 def create_skimmer_drone_mesh() -> WireframeMesh:
@@ -434,7 +522,13 @@ def create_skimmer_drone_mesh() -> WireframeMesh:
             (base_index + 3, 9),
         ]
     )
-    return _extrude_outline(vertices, segments, height=9.0)
+    mesh = _extrude_outline(vertices, segments, height=9.0)
+    gun_mounts = [
+        GunPlacement(center_x=-24.0, base_z=0.0, length=10.0, spread=2.2),
+        GunPlacement(center_x=6.0, base_z=0.0, length=10.0, spread=2.2),
+        GunPlacement(center_x=-8.0, base_z=-6.0, length=-8.0, spread=1.8),
+    ]
+    return _apply_forward_guns(mesh, gun_mounts)
 
 
 def create_warden_mesh() -> WireframeMesh:
@@ -468,7 +562,13 @@ def create_warden_mesh() -> WireframeMesh:
     segments.extend([(16, 17), (17, 18), (18, 19), (19, 16)])
     segments.append((0, 2))
     segments.append((1, 3))
-    return _extrude_outline(vertices, segments, height=12.0)
+    mesh = _extrude_outline(vertices, segments, height=12.0)
+    gun_mounts = [
+        GunPlacement(center_x=-12.0, base_z=8.0, length=10.0, spread=2.6, tip_bridge=True),
+        GunPlacement(center_x=12.0, base_z=8.0, length=10.0, spread=2.6, tip_bridge=True),
+        GunPlacement(center_x=0.0, base_z=-8.0, length=-8.0, spread=3.0),
+    ]
+    return _apply_forward_guns(mesh, gun_mounts)
 
 
 def create_sunlance_mesh() -> WireframeMesh:
@@ -495,7 +595,13 @@ def create_sunlance_mesh() -> WireframeMesh:
         (6, 8),
         (7, 8),
     ]
-    return _extrude_outline(vertices, segments, height=10.0)
+    mesh = _extrude_outline(vertices, segments, height=10.0)
+    gun_mounts = [
+        GunPlacement(center_x=0.0, base_z=8.0, length=20.0, spread=2.0, tip_bridge=True),
+        GunPlacement(center_x=-6.0, base_z=-4.0, length=12.0, spread=2.4),
+        GunPlacement(center_x=6.0, base_z=-4.0, length=12.0, spread=2.4),
+    ]
+    return _apply_forward_guns(mesh, gun_mounts)
 
 
 def create_auric_veil_mesh() -> WireframeMesh:
@@ -523,7 +629,14 @@ def create_auric_veil_mesh() -> WireframeMesh:
         (2, 6),
         (3, 7),
     ]
-    return _extrude_outline(vertices, segments, height=12.0)
+    mesh = _extrude_outline(vertices, segments, height=12.0)
+    gun_mounts = [
+        GunPlacement(center_x=0.0, base_z=10.0, length=14.0, spread=2.4, tip_bridge=True),
+        GunPlacement(center_x=0.0, base_z=-10.0, length=-14.0, spread=2.4, tip_bridge=True),
+        GunPlacement(center_x=-12.0, base_z=0.0, length=10.0, spread=2.0),
+        GunPlacement(center_x=12.0, base_z=0.0, length=10.0, spread=2.0),
+    ]
+    return _apply_forward_guns(mesh, gun_mounts)
 
 
 def create_iron_halberd_mesh() -> WireframeMesh:
@@ -552,7 +665,15 @@ def create_iron_halberd_mesh() -> WireframeMesh:
     segments = _loop_segments(4)
     segments.extend([(0, 4), (1, 5), (4, 5), (4, 6), (5, 7)])
     segments.extend([(2, 11), (11, 10), (10, 9), (9, 3), (2, 3)])
-    return _extrude_outline(vertices, segments, height=16.0)
+    mesh = _extrude_outline(vertices, segments, height=16.0)
+    gun_mounts = [
+        GunPlacement(center_x=-20.0, base_z=16.0, length=20.0, spread=3.0, tip_bridge=True),
+        GunPlacement(center_x=20.0, base_z=16.0, length=20.0, spread=3.0, tip_bridge=True),
+        GunPlacement(center_x=0.0, base_z=-4.0, length=24.0, spread=3.2, tip_bridge=True),
+        GunPlacement(center_x=-10.0, base_z=-20.0, length=-12.0, spread=2.8),
+        GunPlacement(center_x=10.0, base_z=-20.0, length=-12.0, spread=2.8),
+    ]
+    return _apply_forward_guns(mesh, gun_mounts)
 
 
 def create_star_fortress_mesh() -> WireframeMesh:
@@ -594,7 +715,15 @@ def create_star_fortress_mesh() -> WireframeMesh:
     segments.extend([(16, 17), (17, 18), (18, 19), (19, 16)])
     segments.extend([(20, 21), (21, 22), (22, 23), (23, 20)])
     segments.extend([(24, 25), (25, 26), (26, 27), (27, 24)])
-    return _extrude_outline(vertices, segments, height=18.0)
+    mesh = _extrude_outline(vertices, segments, height=18.0)
+    gun_mounts = [
+        GunPlacement(center_x=-18.0, base_z=18.0, length=12.0, spread=3.0, tip_bridge=True),
+        GunPlacement(center_x=18.0, base_z=18.0, length=12.0, spread=3.0, tip_bridge=True),
+        GunPlacement(center_x=-18.0, base_z=-18.0, length=-12.0, spread=3.0, tip_bridge=True),
+        GunPlacement(center_x=18.0, base_z=-18.0, length=-12.0, spread=3.0, tip_bridge=True),
+        GunPlacement(center_x=0.0, base_z=0.0, length=16.0, spread=4.0, tip_bridge=True),
+    ]
+    return _apply_forward_guns(mesh, gun_mounts)
 
 
 def create_lance_of_dawn_mesh() -> WireframeMesh:
@@ -626,7 +755,14 @@ def create_lance_of_dawn_mesh() -> WireframeMesh:
         (1, 8),
         (2, 9),
     ]
-    return _extrude_outline(vertices, segments, height=22.0)
+    mesh = _extrude_outline(vertices, segments, height=22.0)
+    gun_mounts = [
+        GunPlacement(center_x=0.0, base_z=18.0, length=24.0, spread=2.2, tip_bridge=True),
+        GunPlacement(center_x=-6.0, base_z=-4.0, length=16.0, spread=2.4),
+        GunPlacement(center_x=6.0, base_z=-4.0, length=16.0, spread=2.4),
+        GunPlacement(center_x=0.0, base_z=-24.0, length=-18.0, spread=2.2, tip_bridge=True),
+    ]
+    return _apply_forward_guns(mesh, gun_mounts)
 
 
 def create_titans_ward_mesh() -> WireframeMesh:
@@ -659,7 +795,16 @@ def create_titans_ward_mesh() -> WireframeMesh:
     segments.extend([(16, 17), (17, 18), (18, 19), (19, 16)])
     segments.append((0, 2))
     segments.append((1, 3))
-    return _extrude_outline(vertices, segments, height=26.0)
+    mesh = _extrude_outline(vertices, segments, height=26.0)
+    gun_mounts = [
+        GunPlacement(center_x=-28.0, base_z=32.0, length=18.0, spread=3.4, tip_bridge=True),
+        GunPlacement(center_x=28.0, base_z=32.0, length=18.0, spread=3.4, tip_bridge=True),
+        GunPlacement(center_x=-28.0, base_z=-32.0, length=-18.0, spread=3.4, tip_bridge=True),
+        GunPlacement(center_x=28.0, base_z=-32.0, length=-18.0, spread=3.4, tip_bridge=True),
+        GunPlacement(center_x=0.0, base_z=0.0, length=26.0, spread=4.0, tip_bridge=True),
+        GunPlacement(center_x=0.0, base_z=-20.0, length=-16.0, spread=4.0, tip_bridge=True),
+    ]
+    return _apply_forward_guns(mesh, gun_mounts)
 
 
 def create_abyssal_crown_mesh() -> WireframeMesh:
@@ -691,7 +836,15 @@ def create_abyssal_crown_mesh() -> WireframeMesh:
     for i in range(crown_vertices):
         segments.append((crown_start + i, crown_start + ((i + 3) % crown_vertices)))
     segments.extend([(4, crown_start), (5, crown_start + 1), (6, crown_start + 2), (7, crown_start + 3)])
-    return _extrude_outline(vertices, segments, height=28.0)
+    mesh = _extrude_outline(vertices, segments, height=28.0)
+    gun_mounts = [
+        GunPlacement(center_x=-18.0, base_z=22.0, length=12.0, spread=2.6, tip_bridge=True),
+        GunPlacement(center_x=18.0, base_z=22.0, length=12.0, spread=2.6, tip_bridge=True),
+        GunPlacement(center_x=-22.0, base_z=-6.0, length=-12.0, spread=2.6, tip_bridge=True),
+        GunPlacement(center_x=22.0, base_z=-6.0, length=-12.0, spread=2.6, tip_bridge=True),
+        GunPlacement(center_x=0.0, base_z=0.0, length=16.0, spread=3.0, tip_bridge=True),
+    ]
+    return _apply_forward_guns(mesh, gun_mounts)
 
 
 def create_oblivion_spire_mesh() -> WireframeMesh:
@@ -711,7 +864,14 @@ def create_oblivion_spire_mesh() -> WireframeMesh:
     segments.extend([(0, 4), (1, 5), (4, 5), (4, 6), (5, 7), (6, 7)])
     segments.extend([(4, 8), (5, 9), (8, 9)])
     segments.append((2, 3))
-    return _extrude_outline(vertices, segments, height=34.0)
+    mesh = _extrude_outline(vertices, segments, height=34.0)
+    gun_mounts = [
+        GunPlacement(center_x=-8.0, base_z=18.0, length=16.0, spread=2.2, tip_bridge=True),
+        GunPlacement(center_x=8.0, base_z=18.0, length=16.0, spread=2.2, tip_bridge=True),
+        GunPlacement(center_x=0.0, base_z=46.0, length=20.0, spread=2.0, tip_bridge=True),
+        GunPlacement(center_x=0.0, base_z=-12.0, length=-12.0, spread=2.0),
+    ]
+    return _apply_forward_guns(mesh, gun_mounts)
 
 
 def create_shipwright_foundry_mesh() -> WireframeMesh:
