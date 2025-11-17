@@ -142,100 +142,128 @@ def create_asteroid_mesh(radius: float = 24.0) -> WireframeMesh:
 
 
 def create_astral_citadel_mesh() -> WireframeMesh:
-    """Construct a long-hull base with cargo arms and aft boosters."""
+    """Radially symmetric citadel based on the Astral Citadel concept art."""
 
     vertices: List[Vec2] = []
-    lines: List[Tuple[int, int]] = []
+    segments: List[Tuple[int, int]] = []
 
-    # Primary hull (elongated spearhead)
-    hull_outline: List[Vec2] = [
-        (0.0, 150.0),  # nose
-        (30.0, 95.0),
-        (36.0, 40.0),
-        (42.0, -10.0),
-        (38.0, -70.0),
-        (28.0, -140.0),
-        (0.0, -170.0),
-        (-28.0, -140.0),
-        (-38.0, -70.0),
-        (-42.0, -10.0),
-        (-36.0, 40.0),
-        (-30.0, 95.0),
+    def add_polygon(points: Sequence[Vec2]) -> Tuple[int, int]:
+        start = len(vertices)
+        vertices.extend(points)
+        count = len(points)
+        for i in range(count):
+            segments.append((start + i, start + ((i + 1) % count)))
+        return start, count
+
+    def add_circle(radius: float, count: int, rotation: float = 0.0) -> Tuple[int, int]:
+        step = (2.0 * math.pi) / count
+        points = [
+            (
+                math.cos(rotation + (step * i)) * radius,
+                math.sin(rotation + (step * i)) * radius,
+            )
+            for i in range(count)
+        ]
+        return add_polygon(points)
+
+    def connect_scaled(inner: Tuple[int, int], outer: Tuple[int, int]) -> None:
+        inner_start, inner_count = inner
+        outer_start, outer_count = outer
+        factor = outer_count // inner_count
+        for i in range(outer_count):
+            segments.append((outer_start + i, inner_start + (i // factor)))
+
+    def connect_one_to_one(a: Tuple[int, int], b: Tuple[int, int]) -> None:
+        start_a, count_a = a
+        start_b, count_b = b
+        assert count_a == count_b
+        for i in range(count_a):
+            segments.append((start_a + i, start_b + i))
+
+    def rotate_points(points: Sequence[Vec2], angle: float) -> List[Vec2]:
+        cos_a = math.cos(angle)
+        sin_a = math.sin(angle)
+        return [
+            (x * cos_a - y * sin_a, x * sin_a + y * cos_a) for x, y in points
+        ]
+
+    def add_rotated_profile(points: Sequence[Vec2], angles: Sequence[float]) -> None:
+        for angle in angles:
+            add_polygon(rotate_points(points, angle))
+
+    # --- Concentric defense rings ---
+    inner_core = add_circle(18.0, 8, rotation=math.pi / 8.0)
+    mid_core = add_circle(32.0, 16)
+    inner_ring = add_circle(68.0, 32)
+    support_ring = add_circle(96.0, 32)
+    outer_ring = add_circle(132.0, 32)
+    halo_ring = add_circle(170.0, 32)
+
+    connect_scaled(inner_core, mid_core)
+    connect_scaled(mid_core, inner_ring)
+    connect_one_to_one(inner_ring, support_ring)
+    connect_one_to_one(support_ring, outer_ring)
+    connect_one_to_one(outer_ring, halo_ring)
+
+    # Reinforcing diagonals back into the hub
+    for i in range(8):
+        inner_index = inner_core[0] + i
+        ring_index = inner_ring[0] + (i * 4)
+        segments.append((inner_index, ring_index))
+
+    # --- Major cardinal arms ---
+    cardinal_angles = [0.0, math.pi / 2.0, math.pi, 3.0 * math.pi / 2.0]
+    arm_profile: List[Vec2] = [
+        (34.0, 32.0),
+        (94.0, 52.0),
+        (118.0, 44.0),
+        (156.0, 44.0),
+        (156.0, -44.0),
+        (118.0, -44.0),
+        (94.0, -52.0),
+        (34.0, -32.0),
     ]
-    hull_start = len(vertices)
-    vertices.extend(hull_outline)
-    for i in range(len(hull_outline)):
-        lines.append((hull_start + i, hull_start + ((i + 1) % len(hull_outline))))
-    # Reinforcing ridges along the hull
-    spine_top = hull_start
-    spine_bottom = hull_start + 6
-    lines.append((spine_top, spine_bottom))
-    lines.append((hull_start + 2, hull_start + 10))
-    lines.append((hull_start + 3, hull_start + 9))
+    add_rotated_profile(arm_profile, cardinal_angles)
 
-    # Cargo arms (large rectangular pods on both sides)
-    arm_forward = 50.0
-    arm_rear = -50.0
-    arm_offset = 70.0
-    arm_length = 65.0
-    arm_thickness = 30.0
+    # Narrow antenna pylons that extend beyond the halo ring
+    antenna_profile: List[Vec2] = [
+        (150.0, 12.0),
+        (196.0, 12.0),
+        (196.0, -12.0),
+        (150.0, -12.0),
+    ]
+    add_rotated_profile(antenna_profile, cardinal_angles)
 
-    def add_cargo_arm(sign: float) -> None:
-        base_x = sign * (arm_offset + arm_length)
-        inner_x = sign * arm_offset
-        arm_start = len(vertices)
-        vertices.extend(
-            [
-                (inner_x, arm_forward + arm_thickness),
-                (base_x, arm_forward + arm_thickness),
-                (base_x, arm_rear - arm_thickness),
-                (inner_x, arm_rear - arm_thickness),
-            ]
-        )
-        lines.extend(
-            [
-                (arm_start, arm_start + 1),
-                (arm_start + 1, arm_start + 2),
-                (arm_start + 2, arm_start + 3),
-                (arm_start + 3, arm_start),
-                (arm_start, arm_start + 2),
-            ]
-        )
-        # Connect arm to hull bulkhead
-        lines.append((arm_start, hull_start + (0 if sign > 0 else 11)))
-        lines.append((arm_start + 3, hull_start + (5 if sign > 0 else 6)))
+    # --- Diagonal braces and outer bastions ---
+    diagonal_angles = [
+        math.pi / 4.0,
+        3.0 * math.pi / 4.0,
+        5.0 * math.pi / 4.0,
+        7.0 * math.pi / 4.0,
+    ]
+    brace_profile: List[Vec2] = [
+        (30.0, 10.0),
+        (80.0, 30.0),
+        (80.0, -30.0),
+        (30.0, -10.0),
+    ]
+    add_rotated_profile(brace_profile, diagonal_angles)
 
-    add_cargo_arm(1.0)
-    add_cargo_arm(-1.0)
+    bastion_profile: List[Vec2] = [
+        (110.0, 22.0),
+        (138.0, 38.0),
+        (110.0, 54.0),
+        (82.0, 38.0),
+    ]
+    add_rotated_profile(bastion_profile, diagonal_angles)
 
-    # Booster banks (four long cylindrical thrusters aft of the hull)
-    booster_front = -150.0
-    booster_back = -230.0
-    booster_half_width = 6.0
-    booster_offsets = (-40.0, -18.0, 18.0, 40.0)
-    for offset in booster_offsets:
-        booster_start = len(vertices)
-        vertices.extend(
-            [
-                (offset - booster_half_width, booster_front),
-                (offset + booster_half_width, booster_front),
-                (offset + booster_half_width, booster_back),
-                (offset - booster_half_width, booster_back),
-            ]
-        )
-        lines.extend(
-            [
-                (booster_start, booster_start + 1),
-                (booster_start + 1, booster_start + 2),
-                (booster_start + 2, booster_start + 3),
-                (booster_start + 3, booster_start),
-            ]
-        )
-        # struts back to hull base
-        lines.append((booster_start, hull_start + 5))
-        lines.append((booster_start + 1, hull_start + 6))
+    # Connect bastions into the halo ring for added structure
+    for angle_index in range(len(diagonal_angles)):
+        halo_idx = halo_ring[0] + (angle_index * 8 + 4)
+        inner_idx = support_ring[0] + (angle_index * 8 + 4)
+        segments.append((halo_idx, inner_idx))
 
-    return _extrude_outline(vertices, lines, height=90.0)
+    return _extrude_outline(vertices, segments, height=140.0)
 
 
 # --- Ship Meshes ---------------------------------------------------------
