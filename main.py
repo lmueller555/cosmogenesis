@@ -87,8 +87,14 @@ def run() -> None:
     initialize_gl(window_size)
 
     world = create_initial_world()
+    # Position the camera so it views the field from a 60° tilt while
+    # preserving the original distance to the origin.
+    default_distance = math.sqrt(650.0**2 + 650.0**2)
+    tilt_radians = math.radians(60.0)
+    camera_height = math.sin(tilt_radians) * default_distance
+    camera_back = math.cos(tilt_radians) * default_distance
     camera = Camera3D(
-        position=(0.0, 650.0, -650.0),
+        position=(0.0, camera_height, -camera_back),
         target=(0.0, 0.0, 0.0),
         viewport_size=layout.gameplay_rect.size,
     )
