@@ -123,8 +123,6 @@ def run() -> None:
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
                     if layout.is_in_gameplay(event.pos):
-                        if renderer.handle_spawn_ui_click(world, event.pos):
-                            continue
                         clamped = layout.clamp_to_gameplay(event.pos)
                         world_pos = camera.screen_to_world(clamped)
                         if world_pos is not None:

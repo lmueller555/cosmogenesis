@@ -1,7 +1,6 @@
 """Wireframe renderer for Cosmogenesis entities."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from OpenGL import GL as gl
@@ -39,14 +38,6 @@ from .wireframe_primitives import (
     create_wisp_mesh,
     create_skimmer_drone_mesh,
 )
-
-
-@dataclass
-class ShipBuildButton:
-    definition: ShipDefinition
-    rect: pygame.Rect
-    enabled: bool
-
 
 class WireframeRenderer:
     """Handles drawing of world entities using shared mesh data."""
@@ -111,23 +102,6 @@ class WireframeRenderer:
             1.0,
         )
         self._overlay_font = pygame.font.SysFont("Consolas", 16)
-        self._spawn_button_rect: Optional[pygame.Rect] = None
-        self._spawn_menu_rect: Optional[pygame.Rect] = None
-        self._spawn_menu_buttons: List[ShipBuildButton] = []
-        self._spawn_menu_visible: bool = False
-        self._spawn_menu_base: Optional[Base] = None
-        self._tooltip_padding = 8
-        self._spawn_button_bg = (0.08, 0.11, 0.16, 0.92)
-        self._spawn_button_hover = (0.16, 0.22, 0.32, 0.95)
-        self._spawn_button_border = (0.32, 0.45, 0.65, 1.0)
-        self._menu_bg = (0.05, 0.07, 0.11, 0.92)
-        self._menu_border = (0.3, 0.38, 0.55, 1.0)
-        self._menu_button_bg = (0.1, 0.13, 0.2, 0.95)
-        self._menu_button_disabled = (0.06, 0.07, 0.09, 0.85)
-        self._menu_button_border = (0.32, 0.4, 0.56, 1.0)
-        self._menu_button_border_disabled = (0.18, 0.22, 0.3, 1.0)
-        self._tooltip_bg = (0.08, 0.09, 0.12, 0.92)
-        self._tooltip_border = (0.35, 0.42, 0.58, 1.0)
         self._current_viewport_size: Tuple[int, int] = (0, 0)
         self._move_waypoint_color: Tuple[float, float, float, float] = (0.25, 0.9, 0.45, 0.95)
         self._attack_waypoint_color: Tuple[float, float, float, float] = (0.95, 0.32, 0.32, 0.95)
@@ -431,7 +405,6 @@ class WireframeRenderer:
             self._draw_ship_status_bars(world, camera)
             self._draw_base_progress_bars(world, camera)
             self._draw_worker_construction_bars(world, camera)
-            self._draw_selected_base_spawn_ui(world, camera)
             self._draw_waypoint_lines(world, camera)
         finally:
             self._end_overlay()
@@ -607,43 +580,6 @@ class WireframeRenderer:
             text_y = rect.bottom + 4
         self._draw_overlay_text(text_x, text_y, label, (220, 230, 255))
 
-    def _draw_selected_base_spawn_ui(self, world: World, camera: Camera3D) -> None:
-        base = world.selected_base
-        if base is None or base.faction != world.player_faction:
-            self._spawn_button_rect = None
-            self._spawn_menu_rect = None
-            self._spawn_menu_buttons = []
-            self._spawn_menu_visible = False
-            self._spawn_menu_base = None
-            return
-        if self._spawn_menu_base is not None and self._spawn_menu_base is not base:
-            self._close_spawn_menu()
-        screen_pos = camera.world_to_screen(base.position)
-        if screen_pos is None:
-            self._spawn_button_rect = None
-            return
-        button_width = 160
-        button_height = 32
-        button_rect = pygame.Rect(
-            int(screen_pos[0] - button_width / 2),
-            int(screen_pos[1] - 36 - button_height),
-            button_width,
-            button_height,
-        )
-        self._spawn_button_rect = button_rect
-        hovered = button_rect.collidepoint(pygame.mouse.get_pos())
-        bg = self._spawn_button_hover if hovered else self._spawn_button_bg
-        self._draw_overlay_rect(button_rect, bg)
-        self._draw_overlay_outline(button_rect, self._spawn_button_border)
-        label = "Spawn Ships"
-        width, _ = self._overlay_font.size(label)
-        text_x = button_rect.centerx - width / 2
-        text_y = button_rect.centery - 8
-        self._draw_overlay_text(text_x, text_y, label, (220, 235, 255))
-        if not self._spawn_menu_visible or self._spawn_menu_base is not base:
-            return
-        self._draw_spawn_menu(world, base, button_rect)
-
     def _draw_ship_status_bars(self, world: World, camera: Camera3D) -> None:
         grid = getattr(world, "visibility", None)
         viewport_rect = pygame.Rect(0, 0, *self._current_viewport_size)
@@ -711,108 +647,8 @@ class WireframeRenderer:
             return (0.95, 0.55, 0.15, 0.95)
         return (0.95, 0.25, 0.2, 0.95)
 
-    def _draw_spawn_menu(self, world: World, base: Base, anchor_rect: pygame.Rect) -> None:
-        ship_defs = sorted(
-            world.unlocked_ship_definitions(),
-            key=lambda definition: (self._ship_class_order(definition.ship_class), definition.resource_cost),
-        )
-        columns = 4
-        button_size = 72
-        padding = 12
-        rows = max(1, int(math.ceil(len(ship_defs) / columns))) if ship_defs else 1
-        menu_width = columns * button_size + (columns + 1) * padding
-        menu_height = rows * button_size + (rows + 1) * padding
-        menu_x = anchor_rect.centerx - menu_width / 2
-        menu_y = anchor_rect.top - menu_height - 18
-        viewport_width = max(1, self._current_viewport_size[0])
-        max_x = max(8, viewport_width - menu_width - 8)
-        menu_x = max(8, min(menu_x, max_x))
-        menu_y = max(8, menu_y)
-        menu_rect = pygame.Rect(int(menu_x), int(menu_y), menu_width, menu_height)
-        self._spawn_menu_rect = menu_rect
-        self._draw_overlay_rect(menu_rect, self._menu_bg)
-        self._draw_overlay_outline(menu_rect, self._menu_border)
-        self._spawn_menu_buttons = []
-        start_x = menu_rect.left + padding
-        start_y = menu_rect.top + padding
-        mouse_pos = pygame.mouse.get_pos()
-        hovered_button: Optional[ShipBuildButton] = None
-        if not ship_defs:
-            self._draw_overlay_text(
-                menu_rect.left + padding,
-                menu_rect.top + padding,
-                "No hulls unlocked yet",
-                (200, 205, 220),
-            )
-            return
-        for index, definition in enumerate(ship_defs):
-            row = index // columns
-            col = index % columns
-            x = start_x + col * (button_size + padding)
-            y = start_y + row * (button_size + padding)
-            rect = pygame.Rect(int(x), int(y), button_size, button_size)
-            allowed, _ = world.ship_production_status(base, definition)
-            bg = self._menu_button_bg if allowed else self._menu_button_disabled
-            border = self._menu_button_border if allowed else self._menu_button_border_disabled
-            if rect.collidepoint(mouse_pos):
-                hovered_button = ShipBuildButton(definition, rect, allowed)
-            self._draw_overlay_rect(rect, bg)
-            self._draw_overlay_outline(rect, border)
-            self._draw_ship_icon(rect, definition, enabled=allowed)
-            self._spawn_menu_buttons.append(ShipBuildButton(definition, rect, allowed))
-        if hovered_button is not None:
-            self._draw_ship_tooltip(mouse_pos, hovered_button)
 
-    def _draw_ship_icon(
-        self, rect: pygame.Rect, definition: ShipDefinition, *, enabled: bool
-    ) -> None:
-        mesh = self.ship_meshes.get(definition.name)
-        if mesh is None:
-            return
-        bounds = self._ship_mesh_bounds.get(definition.name, (-1.0, 1.0, -1.0, 1.0))
-        min_x, max_x, min_z, max_z = bounds
-        span_x = max_x - min_x
-        span_z = max_z - min_z
-        available = rect.width - 16
-        scale_x = available / span_x if span_x > 0 else available
-        scale_z = available / span_z if span_z > 0 else available
-        scale = min(scale_x, scale_z) * 0.9
-        center_x = (max_x + min_x) * 0.5
-        center_z = (max_z + min_z) * 0.5
-        color = (1.0, 1.0, 1.0, 1.0) if enabled else (0.45, 0.5, 0.62, 1.0)
-        gl.glColor4f(*color)
-        gl.glBegin(gl.GL_LINES)
-        for start_index, end_index in mesh.segments:
-            sx, _, sz = mesh.vertices[start_index]
-            ex, _, ez = mesh.vertices[end_index]
-            start_x = rect.centerx + (sx - center_x) * scale
-            start_y = rect.centery - (sz - center_z) * scale
-            end_x = rect.centerx + (ex - center_x) * scale
-            end_y = rect.centery - (ez - center_z) * scale
-            gl.glVertex2f(start_x, start_y)
-            gl.glVertex2f(end_x, end_y)
-        gl.glEnd()
 
-    def _draw_ship_tooltip(self, mouse_pos: Tuple[int, int], button: ShipBuildButton) -> None:
-        lines = [
-            button.definition.name,
-            f"Cost: {button.definition.resource_cost:,}",
-            f"Build time: {button.definition.build_time:.0f}s",
-        ]
-        widths = [self._overlay_font.size(line)[0] for line in lines]
-        tooltip_width = max(widths) + self._tooltip_padding * 2
-        tooltip_height = len(lines) * 18 + self._tooltip_padding * 2
-        x = mouse_pos[0] + 18
-        y = mouse_pos[1] - tooltip_height - 18
-        if y < 8:
-            y = mouse_pos[1] + 18
-        rect = pygame.Rect(int(x), int(y), tooltip_width, tooltip_height)
-        self._draw_overlay_rect(rect, self._tooltip_bg)
-        self._draw_overlay_outline(rect, self._tooltip_border)
-        text_y = rect.top + self._tooltip_padding
-        for line in lines:
-            self._draw_overlay_text(rect.left + self._tooltip_padding, text_y, line, (230, 235, 255))
-            text_y += 18
 
     def _draw_overlay_rect(self, rect: pygame.Rect, color: Tuple[float, float, float, float]) -> None:
         gl.glColor4f(*color)
@@ -844,38 +680,8 @@ class WireframeRenderer:
             data,
         )
 
-    def handle_spawn_ui_click(self, world: World, pos: Tuple[int, int]) -> bool:
-        base = world.selected_base
-        if base is None or base.faction != world.player_faction:
-            self._close_spawn_menu()
-            return False
-        if self._spawn_button_rect and self._spawn_button_rect.collidepoint(pos):
-            if not self._spawn_menu_visible or self._spawn_menu_base is not base:
-                self._spawn_menu_visible = True
-                self._spawn_menu_base = base
-            else:
-                self._close_spawn_menu()
-            return True
-        if not self._spawn_menu_visible or self._spawn_menu_base is not base:
-            return False
-        for button in self._spawn_menu_buttons:
-            if not button.rect.collidepoint(pos):
-                continue
-            if button.enabled:
-                world.queue_ship(base, button.definition.name)
-            return True
-        if self._spawn_menu_rect and self._spawn_menu_rect.collidepoint(pos):
-            return True
-        self._close_spawn_menu()
-        return True
 
-    def _close_spawn_menu(self) -> None:
-        self._spawn_menu_visible = False
-        self._spawn_menu_base = None
-        self._spawn_menu_buttons = []
-        self._spawn_menu_rect = None
 
-    @staticmethod
     def _ship_class_order(ship_class: str) -> int:
         order = {"Strike": 0, "Escort": 1, "Line": 2, "Capital": 3}
         return order.get(ship_class, 99)
