@@ -261,17 +261,27 @@ class TitleScreen:
             gl.glEnd()
             self._draw_text_centered(
                 button.rect.centerx,
-                button.rect.centery - 16,
+                button.rect.centery,
                 button.label,
                 self._button_font,
+                vertical_alignment="center",
             )
 
     def _draw_text_centered(
-        self, center_x: float, y: float, text: str, font: pygame.font.Font
+        self,
+        center_x: float,
+        y: float,
+        text: str,
+        font: pygame.font.Font,
+        vertical_alignment: str = "top",
     ) -> None:
         surface = font.render(text, True, (230, 235, 255))
         data = pygame.image.tostring(surface, "RGBA", True)
         x = center_x - surface.get_width() * 0.5
+        if vertical_alignment == "center":
+            y -= surface.get_height() * 0.5
+        elif vertical_alignment == "bottom":
+            y -= surface.get_height()
         gl.glRasterPos2f(x, y)
         gl.glDrawPixels(
             surface.get_width(),
