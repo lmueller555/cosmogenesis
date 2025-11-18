@@ -27,6 +27,7 @@ from rendering.opengl_context import initialize_gl, resize_viewport
 from ui.layout import UILayout
 from ui.panel_renderer import UIPanelRenderer
 from ui.pause_menu import PauseMenu
+from ui.title_screen import TitleScreen
 
 
 def handle_camera_input(camera: Camera3D, dt: float) -> None:
@@ -79,20 +80,9 @@ def _minimap_to_world(world: World, layout: UILayout, point: Vec2) -> Vec2:
     return _clamp_to_world(world, (world_x, world_y))
 
 
-def run() -> None:
-    pygame.init()
-    pygame.display.set_caption("Cosmogenesis Prototype")
-    pygame.display.set_mode(
-        (0, 0), pygame.OPENGL | pygame.DOUBLEBUF | pygame.FULLSCREEN
-    )
-    window_size = pygame.display.get_surface().get_size()
+def _create_game_session(window_size: tuple[int, int]) -> tuple[World, Camera3D, UILayout]:
     layout = UILayout(window_size)
-
-    initialize_gl(window_size)
-
     world = create_initial_world()
-    # Position the camera so it views the field from a 60° tilt while
-    # preserving the original distance to the origin.
     default_distance = math.sqrt(650.0**2 + 650.0**2)
     tilt_radians = math.radians(60.0)
     camera_height = math.sin(tilt_radians) * default_distance
@@ -102,22 +92,76 @@ def run() -> None:
         target=(0.0, 0.0, 0.0),
         viewport_size=layout.gameplay_rect.size,
     )
+    return world, camera, layout
+
+
+def run() -> None:
+    pygame.init()
+    pygame.display.set_caption("Cosmogenesis Prototype")
+    pygame.display.set_mode(
+        (0, 0), pygame.OPENGL | pygame.DOUBLEBUF | pygame.FULLSCREEN
+    )
+    window_size = pygame.display.get_surface().get_size()
+
+    initialize_gl(window_size)
+
     renderer = WireframeRenderer()
     ui_renderer = UIPanelRenderer()
     pause_menu = PauseMenu(window_size)
-    selection_drag = SelectionDragState()
+    title_screen = TitleScreen(window_size)
+
+    world: World | None = None
+    camera: Camera3D | None = None
+    layout: UILayout | None = None
+    selection_drag: SelectionDragState | None = None
     last_left_click_time: int | None = None
     last_left_click_pos: Vec2 = (0.0, 0.0)
 
     clock = pygame.time.Clock()
     running = True
     paused = False
+    mode: str = "title"
     while running:
         dt = clock.tick(60) / 1000.0
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                continue
+            if event.type == pygame.VIDEORESIZE:
+                pygame.display.set_mode(
+                    event.size, pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE
+                )
+                resize_viewport(event.size)
+                window_size = event.size
+                pause_menu.update_layout(window_size)
+                title_screen.update_layout(window_size)
+                if layout is not None and camera is not None:
+                    layout.update(window_size)
+                    camera.update_viewport(layout.gameplay_rect.size)
+                continue
+            if mode == "title":
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    action = title_screen.handle_mouse_click(event.pos)
+                    if action == "start":
+                        world, camera, layout = _create_game_session(window_size)
+                        selection_drag = SelectionDragState()
+                        last_left_click_time = None
+                        last_left_click_pos = (0.0, 0.0)
+                        paused = False
+                        pause_menu.hide()
+                        mode = "game"
+                    elif action == "exit":
+                        running = False
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    running = False
+                continue
+
+            assert world is not None
+            assert camera is not None
+            assert layout is not None
+            assert selection_drag is not None
+
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 if paused:
                     paused = False
                     pause_menu.hide()
@@ -138,13 +182,6 @@ def run() -> None:
                     continue
                 paused = True
                 pause_menu.show()
-            elif event.type == pygame.VIDEORESIZE:
-                pygame.display.set_mode(event.size, pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE)
-                resize_viewport(event.size)
-                window_size = event.size
-                layout.update(window_size)
-                camera.update_viewport(layout.gameplay_rect.size)
-                pause_menu.update_layout(window_size)
             elif paused:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     action = pause_menu.handle_mouse_click(event.pos)
@@ -152,7 +189,15 @@ def run() -> None:
                         paused = False
                         pause_menu.hide()
                     elif action == "quit":
-                        running = False
+                        clear_selection(world)
+                        world = None
+                        camera = None
+                        layout = None
+                        selection_drag = None
+                        paused = False
+                        pause_menu.hide()
+                        last_left_click_time = None
+                        mode = "title"
                 continue
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
@@ -267,16 +312,23 @@ def run() -> None:
                         elif not additive:
                             clear_selection(world)
 
-        if not paused:
-            handle_camera_input(camera, dt)
-            world.update(dt)
-        selection_box = None
-        if selection_drag.dragging and selection_drag.has_significant_drag():
-            selection_box = selection_drag.corners()
-        renderer.draw_world(world, camera, layout, selection_box=selection_box)
-        ui_renderer.draw(world, camera, layout)
-        if paused:
-            pause_menu.draw()
+        if mode == "game" and world is not None and camera is not None and layout is not None:
+            if not paused:
+                handle_camera_input(camera, dt)
+                world.update(dt)
+            selection_box = None
+            if (
+                selection_drag is not None
+                and selection_drag.dragging
+                and selection_drag.has_significant_drag()
+            ):
+                selection_box = selection_drag.corners()
+            renderer.draw_world(world, camera, layout, selection_box=selection_box)
+            ui_renderer.draw(world, camera, layout)
+            if paused:
+                pause_menu.draw()
+        else:
+            title_screen.draw()
         pygame.display.flip()
 
     pygame.quit()
