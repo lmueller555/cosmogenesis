@@ -26,6 +26,7 @@ from rendering.draw_system import WireframeRenderer
 from rendering.opengl_context import initialize_gl, resize_viewport
 from ui.layout import UILayout
 from ui.panel_renderer import UIPanelRenderer
+from ui.pause_menu import PauseMenu
 
 
 def handle_camera_input(camera: Camera3D, dt: float) -> None:
@@ -103,18 +104,24 @@ def run() -> None:
     )
     renderer = WireframeRenderer()
     ui_renderer = UIPanelRenderer()
+    pause_menu = PauseMenu(window_size)
     selection_drag = SelectionDragState()
     last_left_click_time: int | None = None
     last_left_click_pos: Vec2 = (0.0, 0.0)
 
     clock = pygame.time.Clock()
     running = True
+    paused = False
     while running:
         dt = clock.tick(60) / 1000.0
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                if paused:
+                    paused = False
+                    pause_menu.hide()
+                    continue
                 if world.pending_construction is not None:
                     world.cancel_pending_construction()
                     continue
@@ -122,13 +129,31 @@ def run() -> None:
                 if base is not None and base.faction == world.player_faction:
                     if world.cancel_last_ship_order(base):
                         continue
-                running = False
+                if (
+                    world.selected_ships
+                    or world.selected_base is not None
+                    or world.selected_facility is not None
+                ):
+                    clear_selection(world)
+                    continue
+                paused = True
+                pause_menu.show()
             elif event.type == pygame.VIDEORESIZE:
                 pygame.display.set_mode(event.size, pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE)
                 resize_viewport(event.size)
                 window_size = event.size
                 layout.update(window_size)
                 camera.update_viewport(layout.gameplay_rect.size)
+                pause_menu.update_layout(window_size)
+            elif paused:
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    action = pause_menu.handle_mouse_click(event.pos)
+                    if action == "resume":
+                        paused = False
+                        pause_menu.hide()
+                    elif action == "quit":
+                        running = False
+                continue
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
                     if layout.is_in_gameplay(event.pos):
@@ -242,13 +267,16 @@ def run() -> None:
                         elif not additive:
                             clear_selection(world)
 
-        handle_camera_input(camera, dt)
-        world.update(dt)
+        if not paused:
+            handle_camera_input(camera, dt)
+            world.update(dt)
         selection_box = None
         if selection_drag.dragging and selection_drag.has_significant_drag():
             selection_box = selection_drag.corners()
         renderer.draw_world(world, camera, layout, selection_box=selection_box)
         ui_renderer.draw(world, camera, layout)
+        if paused:
+            pause_menu.draw()
         pygame.display.flip()
 
     pygame.quit()
