@@ -68,7 +68,9 @@ class TitleScreen:
         current_tick = pygame.time.get_ticks()
         delta = (current_tick - self._last_tick) * 0.001
         self._last_tick = current_tick
-        self._planet_angle = (self._planet_angle + delta * 0.3) % (math.tau if hasattr(math, "tau") else (2 * math.pi))
+        self._planet_angle = (self._planet_angle + delta * 0.075) % (
+            math.tau if hasattr(math, "tau") else (2 * math.pi)
+        )
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
         gl.glViewport(0, 0, width, height)
         gl.glMatrixMode(gl.GL_PROJECTION)
@@ -110,16 +112,16 @@ class TitleScreen:
         gl.glEnd()
 
     def _draw_planet(self, width: int, height: int) -> None:
-        radius = min(width, height) * 0.45
-        center_x = width * 0.5
-        center_y = height * 0.58
-        vertical_scale = 0.85
+        radius = min(width, height) * 0.9
+        center_x = width * 0.78
+        center_y = height * 0.38
+        vertical_scale = 0.82
 
         # Soft glow behind the wireframe
         gl.glColor4f(0.06, 0.2, 0.45, 0.3)
         gl.glBegin(gl.GL_TRIANGLE_FAN)
         gl.glVertex2f(center_x, center_y)
-        glow_radius = radius * 1.05
+        glow_radius = radius * 1.1
         for i in range(361):
             angle = math.radians(i)
             x = center_x + math.cos(angle) * glow_radius
@@ -141,13 +143,13 @@ class TitleScreen:
 
         # Latitude rings
         gl.glColor4f(0.25, 0.45, 0.9, 0.25)
-        latitudes = (-0.65, -0.35, 0.0, 0.35, 0.65)
+        latitudes = [i * 0.15 - 0.75 for i in range(11)]
         for lat in latitudes:
             lat_radius = radius * math.cos(lat)
             lat_y = center_y + math.sin(lat) * radius * vertical_scale
             gl.glBegin(gl.GL_LINE_LOOP)
-            for i in range(360):
-                angle = math.radians(i)
+            for i in range(480):
+                angle = math.radians(i * (360 / 480))
                 x = center_x + math.cos(angle) * lat_radius
                 y = lat_y + math.sin(angle) * radius * 0.02
                 gl.glVertex2f(x, y)
@@ -155,11 +157,11 @@ class TitleScreen:
 
         # Longitude curves rotate slowly to simulate spinning
         gl.glColor4f(0.35, 0.7, 1.0, 0.25)
-        longitudes = (-math.pi / 2, -math.pi / 3, -math.pi / 6, 0.0, math.pi / 6, math.pi / 3, math.pi / 2)
+        longitudes = [math.pi / 8 * i for i in range(-8, 9)]
         for lon in longitudes:
             lon_angle = lon + self._planet_angle
             gl.glBegin(gl.GL_LINE_STRIP)
-            for lat_deg in range(-90, 91, 3):
+            for lat_deg in range(-90, 91, 2):
                 lat = math.radians(lat_deg)
                 x = center_x + math.cos(lat) * math.cos(lon_angle) * radius
                 y = center_y + math.sin(lat) * radius * vertical_scale
@@ -183,11 +185,11 @@ class TitleScreen:
 
         ring_tilt = math.radians(32.0)
         ring_rotation = self._planet_angle * 0.6
-        gl.glPointSize(2.1)
+        gl.glPointSize(2.4)
 
         def draw_ring(ring_radius: float, base_alpha: float) -> None:
             gl.glBegin(gl.GL_POINTS)
-            for degrees in range(0, 360, 3):
+            for degrees in range(0, 360, 2):
                 angle = math.radians(degrees) + ring_rotation
                 cos_angle = math.cos(angle)
                 sin_angle = math.sin(angle)
@@ -204,8 +206,10 @@ class TitleScreen:
                 gl.glVertex2f(x, y)
             gl.glEnd()
 
+        draw_ring(radius * 1.5, 0.28)
         draw_ring(radius * 1.35, 0.35)
-        draw_ring(radius * 1.18, 0.22)
+        draw_ring(radius * 1.2, 0.3)
+        draw_ring(radius * 1.05, 0.18)
 
     def _draw_title(self, width: int) -> None:
         center_x = width * 0.5
