@@ -185,29 +185,17 @@ class TitleScreen:
 
         ring_tilt = math.radians(32.0)
         ring_rotation = self._planet_angle * 0.6
-        two_pi = math.tau if hasattr(math, "tau") else (2 * math.pi)
+        gl.glPointSize(2.4)
 
-        def draw_ring(
-            ring_radius: float,
-            base_alpha: float,
-            sample_count: int,
-            radial_jitter: float,
-            point_size: float,
-        ) -> None:
-            gl.glPointSize(point_size)
+        def draw_ring(ring_radius: float, base_alpha: float) -> None:
             gl.glBegin(gl.GL_POINTS)
-            for sample in range(sample_count):
-                progress = sample / sample_count
-                angle = progress * two_pi + ring_rotation
+            for degrees in range(0, 360, 2):
+                angle = math.radians(degrees) + ring_rotation
                 cos_angle = math.cos(angle)
                 sin_angle = math.sin(angle)
 
-                wobble = 1.0 + math.sin(progress * two_pi * 6.0) * radial_jitter
-                wobble += math.sin(progress * two_pi * 16.0 + ring_radius) * (radial_jitter * 0.5)
-                local_radius = ring_radius * wobble
-
-                x = center_x + cos_angle * local_radius
-                y_offset = sin_angle * local_radius * math.sin(ring_tilt)
+                x = center_x + cos_angle * ring_radius
+                y_offset = sin_angle * ring_radius * math.sin(ring_tilt)
                 y = center_y + y_offset * vertical_scale
 
                 depth = sin_angle * math.cos(ring_tilt)
@@ -218,12 +206,10 @@ class TitleScreen:
                 gl.glVertex2f(x, y)
             gl.glEnd()
 
-        draw_ring(radius * 1.8, 0.2, 1400, 0.03, 2.0)
-        draw_ring(radius * 1.65, 0.26, 1200, 0.028, 2.2)
-        draw_ring(radius * 1.5, 0.3, 1100, 0.025, 2.4)
-        draw_ring(radius * 1.35, 0.34, 1000, 0.022, 2.5)
-        draw_ring(radius * 1.2, 0.32, 950, 0.02, 2.6)
-        draw_ring(radius * 1.08, 0.24, 850, 0.018, 2.2)
+        draw_ring(radius * 1.5, 0.28)
+        draw_ring(radius * 1.35, 0.35)
+        draw_ring(radius * 1.2, 0.3)
+        draw_ring(radius * 1.05, 0.18)
 
     def _draw_title(self, width: int) -> None:
         center_x = width * 0.5
