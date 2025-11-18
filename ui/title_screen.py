@@ -249,9 +249,10 @@ class TitleScreen:
             gl.glVertex2f(button.rect.right - 1, button.rect.bottom - 1)
             gl.glVertex2f(button.rect.left + 1, button.rect.bottom - 1)
             gl.glEnd()
+            text_y = button.rect.centery - self._button_font.get_height() * 0.5
             self._draw_text_centered(
                 button.rect.centerx,
-                button.rect.centery - 16,
+                text_y,
                 button.label,
                 self._button_font,
             )
