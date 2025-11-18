@@ -121,6 +121,20 @@ def run() -> None:
     running = True
     paused = False
     mode: str = "title"
+
+    def begin_game_session(notification: str | None = None) -> None:
+        nonlocal world, camera, layout, selection_drag
+        nonlocal last_left_click_time, last_left_click_pos, paused, mode
+        if notification:
+            print(notification)
+        world, camera, layout = _create_game_session(window_size)
+        selection_drag = SelectionDragState()
+        last_left_click_time = None
+        last_left_click_pos = (0.0, 0.0)
+        paused = False
+        pause_menu.hide()
+        mode = "game"
+
     while running:
         dt = clock.tick(60) / 1000.0
         for event in pygame.event.get():
@@ -143,13 +157,11 @@ def run() -> None:
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     action = title_screen.handle_mouse_click(event.pos)
                     if action == "start":
-                        world, camera, layout = _create_game_session(window_size)
-                        selection_drag = SelectionDragState()
-                        last_left_click_time = None
-                        last_left_click_pos = (0.0, 0.0)
-                        paused = False
-                        pause_menu.hide()
-                        mode = "game"
+                        begin_game_session()
+                    elif action == "campaign":
+                        begin_game_session(
+                            "Campaign mode is not implemented yet. Starting free play session instead."
+                        )
                     elif action == "exit":
                         running = False
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
