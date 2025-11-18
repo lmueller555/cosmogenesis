@@ -186,11 +186,14 @@ class TitleScreen:
         ring_tilt = math.radians(32.0)
         ring_rotation = self._planet_angle * 0.6
         gl.glPointSize(2.4)
+        full_rotation = math.tau if hasattr(math, "tau") else (2.0 * math.pi)
+        base_point_count = int(360 / 2)
+        dense_point_count = base_point_count * 10
 
         def draw_ring(ring_radius: float, base_alpha: float) -> None:
             gl.glBegin(gl.GL_POINTS)
-            for degrees in range(0, 360, 2):
-                angle = math.radians(degrees) + ring_rotation
+            for index in range(dense_point_count):
+                angle = (index / dense_point_count) * full_rotation + ring_rotation
                 cos_angle = math.cos(angle)
                 sin_angle = math.sin(angle)
 
