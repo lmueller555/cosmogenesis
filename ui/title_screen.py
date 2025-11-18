@@ -127,6 +127,8 @@ class TitleScreen:
             gl.glVertex2f(x, y)
         gl.glEnd()
 
+        self._draw_ring_system(center_x, center_y, radius, vertical_scale)
+
         gl.glLineWidth(1.5)
         gl.glColor4f(0.3, 0.55, 0.95, 0.35)
         gl.glBegin(gl.GL_LINE_LOOP)
@@ -173,6 +175,37 @@ class TitleScreen:
             y = center_y + math.sin(angle) * radius * vertical_scale * 1.03
             gl.glVertex2f(x, y)
         gl.glEnd()
+
+    def _draw_ring_system(
+        self, center_x: float, center_y: float, radius: float, vertical_scale: float
+    ) -> None:
+        """Render a dotted halo of rings that rotates around the planet."""
+
+        ring_tilt = math.radians(32.0)
+        ring_rotation = self._planet_angle * 0.6
+        gl.glPointSize(2.1)
+
+        def draw_ring(ring_radius: float, base_alpha: float) -> None:
+            gl.glBegin(gl.GL_POINTS)
+            for degrees in range(0, 360, 3):
+                angle = math.radians(degrees) + ring_rotation
+                cos_angle = math.cos(angle)
+                sin_angle = math.sin(angle)
+
+                x = center_x + cos_angle * ring_radius
+                y_offset = sin_angle * ring_radius * math.sin(ring_tilt)
+                y = center_y + y_offset * vertical_scale
+
+                depth = sin_angle * math.cos(ring_tilt)
+                normalized_depth = (depth / math.cos(ring_tilt) + 1.0) * 0.5
+                alpha = base_alpha * (0.45 + 0.55 * normalized_depth)
+                brightness = 0.55 + 0.35 * normalized_depth
+                gl.glColor4f(0.25 + 0.25 * brightness, 0.6 + 0.2 * brightness, 1.0, alpha)
+                gl.glVertex2f(x, y)
+            gl.glEnd()
+
+        draw_ring(radius * 1.35, 0.35)
+        draw_ring(radius * 1.18, 0.22)
 
     def _draw_title(self, width: int) -> None:
         center_x = width * 0.5
