@@ -42,7 +42,7 @@ class TitleScreen:
         first_y = int(height * 0.55)
         spacing = 96
         labels: Sequence[Tuple[str, str]] = (
-            ("Begin Simulation", "start"),
+            ("Free Play", "start"),
             ("Exit", "exit"),
         )
         buttons: List[TitleButton] = []
