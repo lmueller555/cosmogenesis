@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
+import math
+
 import pygame
 from OpenGL import GL as gl
 
@@ -27,6 +29,8 @@ class TitleScreen:
         self._button_font = pygame.font.SysFont("Consolas", 30)
         self._window_size = window_size
         self._buttons: List[TitleButton] = []
+        self._planet_angle = 0.0
+        self._last_tick = pygame.time.get_ticks()
         self.update_layout(window_size)
 
     def update_layout(self, window_size: Tuple[int, int]) -> None:
@@ -61,6 +65,10 @@ class TitleScreen:
 
     def draw(self) -> None:
         width, height = self._window_size
+        current_tick = pygame.time.get_ticks()
+        delta = (current_tick - self._last_tick) * 0.001
+        self._last_tick = current_tick
+        self._planet_angle = (self._planet_angle + delta * 0.3) % (math.tau if hasattr(math, "tau") else (2 * math.pi))
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
         gl.glViewport(0, 0, width, height)
         gl.glMatrixMode(gl.GL_PROJECTION)
@@ -89,6 +97,8 @@ class TitleScreen:
         gl.glVertex2f(0.0, height)
         gl.glEnd()
 
+        self._draw_planet(width, height)
+
         gl.glColor4f(0.15, 0.32, 0.6, 0.25)
         gl.glLineWidth(2.0)
         padding = 24
@@ -97,6 +107,71 @@ class TitleScreen:
         gl.glVertex2f(width - padding, padding)
         gl.glVertex2f(width - padding, height - padding)
         gl.glVertex2f(padding, height - padding)
+        gl.glEnd()
+
+    def _draw_planet(self, width: int, height: int) -> None:
+        radius = min(width, height) * 0.45
+        center_x = width * 0.5
+        center_y = height * 0.58
+        vertical_scale = 0.85
+
+        # Soft glow behind the wireframe
+        gl.glColor4f(0.06, 0.2, 0.45, 0.3)
+        gl.glBegin(gl.GL_TRIANGLE_FAN)
+        gl.glVertex2f(center_x, center_y)
+        glow_radius = radius * 1.05
+        for i in range(361):
+            angle = math.radians(i)
+            x = center_x + math.cos(angle) * glow_radius
+            y = center_y + math.sin(angle) * glow_radius * vertical_scale
+            gl.glVertex2f(x, y)
+        gl.glEnd()
+
+        gl.glLineWidth(1.5)
+        gl.glColor4f(0.3, 0.55, 0.95, 0.35)
+        gl.glBegin(gl.GL_LINE_LOOP)
+        for i in range(360):
+            angle = math.radians(i)
+            x = center_x + math.cos(angle) * radius
+            y = center_y + math.sin(angle) * radius * vertical_scale
+            gl.glVertex2f(x, y)
+        gl.glEnd()
+
+        # Latitude rings
+        gl.glColor4f(0.25, 0.45, 0.9, 0.25)
+        latitudes = (-0.65, -0.35, 0.0, 0.35, 0.65)
+        for lat in latitudes:
+            lat_radius = radius * math.cos(lat)
+            lat_y = center_y + math.sin(lat) * radius * vertical_scale
+            gl.glBegin(gl.GL_LINE_LOOP)
+            for i in range(360):
+                angle = math.radians(i)
+                x = center_x + math.cos(angle) * lat_radius
+                y = lat_y + math.sin(angle) * radius * 0.02
+                gl.glVertex2f(x, y)
+            gl.glEnd()
+
+        # Longitude curves rotate slowly to simulate spinning
+        gl.glColor4f(0.35, 0.7, 1.0, 0.25)
+        longitudes = (-math.pi / 2, -math.pi / 3, -math.pi / 6, 0.0, math.pi / 6, math.pi / 3, math.pi / 2)
+        for lon in longitudes:
+            lon_angle = lon + self._planet_angle
+            gl.glBegin(gl.GL_LINE_STRIP)
+            for lat_deg in range(-90, 91, 3):
+                lat = math.radians(lat_deg)
+                x = center_x + math.cos(lat) * math.cos(lon_angle) * radius
+                y = center_y + math.sin(lat) * radius * vertical_scale
+                gl.glVertex2f(x, y)
+            gl.glEnd()
+
+        # Secondary rim highlight
+        gl.glColor4f(0.45, 0.8, 1.0, 0.15)
+        gl.glBegin(gl.GL_LINE_LOOP)
+        for i in range(360):
+            angle = math.radians(i)
+            x = center_x + math.cos(angle) * radius * 1.03
+            y = center_y + math.sin(angle) * radius * vertical_scale * 1.03
+            gl.glVertex2f(x, y)
         gl.glEnd()
 
     def _draw_title(self, width: int) -> None:
