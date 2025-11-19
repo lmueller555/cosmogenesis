@@ -864,5 +864,5 @@ class OpeningSceneCutscene:
         return trees
 
 
-Cutscene = CampaignOpeningCutscene
+Cutscene = OpeningSceneCutscene
 """Alias used by external callers when referencing the default cutscene."""
