@@ -148,24 +148,27 @@ class CampaignOpeningCutscene:
         self._draw_mars(mars_center, mars_radius, mars_visibility)
 
     # ------------------------------------------------------------------
-    # Earth rendering (lat/long strips)
+    # Earth rendering (lat/long strips, sharper features)
     def _draw_earth(self, center: Vec2, radius: float) -> None:
         """
         Draw Earth as a latitude/longitude grid so continents and oceans
-        appear as actual shapes instead of radial wedges.
+        appear as actual shapes, with sharper surface detail.
         """
-        # Number of bands (latitude) and slices (longitude)
-        lat_segments = 48
-        lon_segments = 96
+        # Higher tessellation for crisper features
+        lat_segments = 72
+        lon_segments = 144
 
         # 3D light direction for nicer shading
         light_dir = self._normalized3((-0.4, -0.2, 0.4))
 
-        ocean_color = (0.045, 0.14, 0.33)
-        land_color = (0.14, 0.46, 0.22)
-        tundra_color = (0.65, 0.75, 0.5)
+        # Palette with stronger contrast
+        deep_ocean = (0.02, 0.05, 0.18)
+        shallow_ocean = (0.05, 0.18, 0.33)
+        lowland = (0.09, 0.42, 0.18)
+        highland = (0.32, 0.35, 0.20)
+        mountain = (0.70, 0.70, 0.72)
+        ice_color = (0.96, 0.98, 1.0)
 
-        # Main globe as triangle strips between latitudes
         for lat_i in range(lat_segments):
             lat0 = -0.5 * math.pi + (lat_i / lat_segments) * math.pi
             lat1 = -0.5 * math.pi + ((lat_i + 1) / lat_segments) * math.pi
@@ -180,57 +183,113 @@ class CampaignOpeningCutscene:
                     cos_lon = math.cos(lon)
                     sin_lon = math.sin(lon)
 
-                    # 3D surface normal on a unit sphere
+                    # 3D normal on sphere
                     nx = cos_lat * cos_lon
                     ny = sin_lat
                     nz = cos_lat * sin_lon
                     normal3 = (nx, ny, nz)
 
-                    # Project to 2D disk
+                    # 2D projection (slight vertical squish)
                     vx = center[0] + nx * radius
                     vy = center[1] + ny * radius * 0.98
 
-                    # Longitude/latitude parameters for color functions
+                    # Parameters for surface functions
                     angle = lon
                     lat = sin_lat
+                    abs_lat = abs(lat)
 
                     # Lighting
                     shade = max(0.0, self._dot3(normal3, light_dir))
 
-                    # Continents & climate
-                    land_mask = self._earth_continent_mask(angle, lat)
-                    polar_mix = max(0.0, 1.0 - abs(lat) * 4.5)
+                    # Base continent "height"
+                    height_raw = self._earth_continent_mask(angle, lat)
+                    # Sharpen land/ocean separation and add subtle edge noise
+                    # so coastlines are more defined.
+                    height = height_raw
+                    height = (height - 0.15) / 0.85  # push small values towards ocean
+                    height = max(0.0, min(1.0, height))
+                    # Edge noise – small, so we don't flicker
+                    edge_noise = 0.05 * math.sin(angle * 8.3 + lat * 17.1)
+                    height = max(0.0, min(1.0, height + edge_noise))
 
-                    base_r = self._lerp(ocean_color[0], land_color[0], land_mask)
-                    base_g = self._lerp(ocean_color[1], land_color[1], land_mask)
-                    base_b = self._lerp(ocean_color[2], land_color[2], land_mask)
+                    # Classify terrain bands more aggressively for crisp biomes
+                    if height < 0.08:
+                        # deep ocean
+                        base_r, base_g, base_b = deep_ocean
+                    elif height < 0.25:
+                        # shallow ocean / coastal shelf
+                        t = (height - 0.08) / (0.25 - 0.08)
+                        base_r = self._lerp(deep_ocean[0], shallow_ocean[0], t)
+                        base_g = self._lerp(deep_ocean[1], shallow_ocean[1], t)
+                        base_b = self._lerp(deep_ocean[2], shallow_ocean[2], t)
+                    elif height < 0.45:
+                        # lush lowlands
+                        t = (height - 0.25) / (0.45 - 0.25)
+                        base_r = self._lerp(shallow_ocean[0], lowland[0], t)
+                        base_g = self._lerp(shallow_ocean[1], lowland[1], t)
+                        base_b = self._lerp(shallow_ocean[2], lowland[2], t)
+                    elif height < 0.7:
+                        # highlands
+                        t = (height - 0.45) / (0.7 - 0.45)
+                        base_r = self._lerp(lowland[0], highland[0], t)
+                        base_g = self._lerp(lowland[1], highland[1], t)
+                        base_b = self._lerp(lowland[2], highland[2], t)
+                    else:
+                        # mountains
+                        t = min(1.0, (height - 0.7) / 0.3)
+                        base_r = self._lerp(highland[0], mountain[0], t)
+                        base_g = self._lerp(highland[1], mountain[1], t)
+                        base_b = self._lerp(highland[2], mountain[2], t)
 
-                    # Tundra / icy regions near poles
-                    base_r = self._lerp(base_r, tundra_color[0], polar_mix)
-                    base_g = self._lerp(base_g, tundra_color[1], polar_mix)
-                    base_b = self._lerp(base_b, tundra_color[2], polar_mix)
+                    # A bit of drier tint near equator on land only
+                    if height >= 0.25:
+                        dryness = max(0.0, 1.0 - abs_lat * 3.0)
+                        desert_tint = (0.60, 0.50, 0.30)
+                        desert_strength = 0.35 * dryness * (height - 0.25)
+                        base_r = self._lerp(base_r, desert_tint[0], desert_strength)
+                        base_g = self._lerp(base_g, desert_tint[1], desert_strength)
+                        base_b = self._lerp(base_b, desert_tint[2], desert_strength)
 
-                    # Clouds brighten the underlying surface
+                    # Polar ice caps – narrower and sharper
+                    ice = self._smoothstep(0.78, 0.9, abs_lat)
+                    base_r = self._lerp(base_r, ice_color[0], ice)
+                    base_g = self._lerp(base_g, ice_color[1], ice)
+                    base_b = self._lerp(base_b, ice_color[2], ice)
+
+                    # Clouds – keep them, but less washing
                     cloud_cover = self._earth_cloud_cover(angle, lat)
-                    r = base_r + cloud_cover * 0.45
-                    g = base_g + cloud_cover * 0.45
-                    b = base_b + cloud_cover * 0.47
+                    if cloud_cover > 0.0:
+                        cloud_intensity = cloud_cover * 0.55
+                        base_r = self._lerp(base_r, 1.0, cloud_intensity * 0.5)
+                        base_g = self._lerp(base_g, 1.0, cloud_intensity * 0.6)
+                        base_b = self._lerp(base_b, 1.0, cloud_intensity * 0.7)
 
-                    brightness = 0.35 + 0.65 * shade
-                    r *= brightness
-                    g *= brightness
-                    b *= brightness
+                    # Specular highlight on oceans – small, sharp glint
+                    if height < 0.25:
+                        spec = max(0.0, shade - 0.85) * 5.0
+                        base_r += spec * 0.28
+                        base_g += spec * 0.32
+                        base_b += spec * 0.40
+
+                    base_r = self._clamp01(base_r)
+                    base_g = self._clamp01(base_g)
+                    base_b = self._clamp01(base_b)
+
+                    brightness = 0.32 + 0.68 * shade
+                    r = base_r * brightness
+                    g = base_g * brightness
+                    b = base_b * brightness
 
                     gl.glColor4f(
-                        max(0.0, min(1.0, r)),
-                        max(0.0, min(1.0, g)),
-                        max(0.0, min(1.0, b)),
+                        self._clamp01(r),
+                        self._clamp01(g),
+                        self._clamp01(b),
                         1.0,
                     )
                     gl.glVertex2f(vx, vy)
             gl.glEnd()
 
-        # Cloud wisps overlay (still drawn as a fan, but subtle)
+        # Cloud wisps overlay (kept subtle)
         ring_segments = 240
         gl.glBegin(gl.GL_TRIANGLE_FAN)
         gl.glColor4f(1.0, 1.0, 1.0, 0.0)
@@ -239,7 +298,7 @@ class CampaignOpeningCutscene:
             angle = (index / ring_segments) * math.tau
             normal = (math.cos(angle), math.sin(angle))
             cover = self._earth_cloud_cover(angle * 1.07 + 0.4, normal[1] * 0.9)
-            cover *= 0.22 + 0.12 * math.sin(self._elapsed * 0.4 + angle * 2.0)
+            cover *= 0.16 + 0.10 * math.sin(self._elapsed * 0.4 + angle * 2.0)
             gl.glColor4f(1.0, 1.0, 1.0, cover)
             gl.glVertex2f(
                 center[0] + normal[0] * radius * 1.005,
@@ -269,15 +328,12 @@ class CampaignOpeningCutscene:
         gl.glEnd()
 
     # ------------------------------------------------------------------
-    # Mars rendering (lat/long strips)
+    # Mars rendering (lat/long strips, sharper features)
     def _draw_mars(self, center: Vec2, radius: float, visibility: float) -> None:
-        lat_segments = 40
-        lon_segments = 80
+        lat_segments = 64
+        lon_segments = 128
 
         light_dir = self._normalized3((-0.35, -0.05, 0.3))
-
-        gl.glBegin(gl.GL_TRIANGLES)  # we'll end/restart manually via strips
-        gl.glEnd()  # no-op; just ensures state is clean
 
         for lat_i in range(lat_segments):
             lat0 = -0.5 * math.pi + (lat_i / lat_segments) * math.pi
@@ -306,16 +362,16 @@ class CampaignOpeningCutscene:
 
                     shade = max(0.0, self._dot3(normal3, light_dir))
                     r, g, b = self._mars_albedo(angle, lat)
-                    brightness = 0.25 + 0.75 * shade
 
+                    brightness = 0.26 + 0.74 * shade
                     r *= brightness
                     g *= brightness
                     b *= brightness
 
                     gl.glColor4f(
-                        max(0.0, min(1.0, r)),
-                        max(0.0, min(1.0, g)),
-                        max(0.0, min(1.0, b)),
+                        self._clamp01(r),
+                        self._clamp01(g),
+                        self._clamp01(b),
                         visibility,
                     )
                     gl.glVertex2f(vx, vy)
@@ -430,9 +486,34 @@ class CampaignOpeningCutscene:
             return (0.0, 0.0, 0.0)
         return (vec[0] / length, vec[1] / length, vec[2] / length)
 
+    @staticmethod
+    def _clamp01(value: float) -> float:
+        if value <= 0.0:
+            return 0.0
+        if value >= 1.0:
+            return 1.0
+        return value
+
+    @staticmethod
+    def _lerp(a: float, b: float, t: float) -> float:
+        t = CampaignOpeningCutscene._clamp01(t)
+        return a + (b - a) * t
+
+    @staticmethod
+    def _smoothstep(edge0: float, edge1: float, x: float) -> float:
+        if edge0 == edge1:
+            return 0.0
+        t = (x - edge0) / (edge1 - edge0)
+        t = CampaignOpeningCutscene._clamp01(t)
+        return t * t * (3.0 - 2.0 * t)
+
     # ------------------------------------------------------------------
     # Planet surface helpers
     def _earth_continent_mask(self, angle: float, lat: float) -> float:
+        """
+        Large-scale "height" map for continents; still smooth, but we
+        sharpen it when mapping to colors.
+        """
         mask = 0.0
         for center_angle, center_lat, angular_width, strength in self.EARTH_CONTINENT_BLOBS:
             ang_dist = self._wrapped_angle_distance(angle, center_angle)
@@ -452,33 +533,71 @@ class CampaignOpeningCutscene:
         return max(0.0, min(1.0, cover))
 
     def _mars_albedo(self, angle: float, lat: float) -> Tuple[float, float, float]:
-        base = (0.55, 0.28, 0.15)
-        basalt = (0.35, 0.18, 0.13)
-        highlights = (0.78, 0.45, 0.22)
-        region_mix = 0.0
+        """
+        Sharper albedo features for Mars: dark basins, bright highlands,
+        canyon band, polar caps, and dust storms with more contrast.
+        """
+        # Base palettes
+        dark_basin = (0.35, 0.17, 0.10)      # Mare-like basalt
+        bright_highland = (0.80, 0.43, 0.24)  # Dusty highlands
+        mid_tone = (0.55, 0.28, 0.15)
+
+        # Large-scale basins
+        basin_strength = 0.0
         for center_angle, center_lat, angular_width, strength in self.MARS_ALBEDO_FEATURES:
             ang_dist = self._wrapped_angle_distance(angle, center_angle)
             lat_dist = abs(lat - center_lat)
             ang_falloff = max(0.0, 1.0 - (ang_dist / angular_width) ** 2)
             lat_falloff = max(0.0, 1.0 - (lat_dist / 0.75) ** 2)
-            region_mix += ang_falloff * lat_falloff * strength
-        region_mix = max(0.0, min(1.0, region_mix))
-        mix_color = (
-            self._lerp(base[0], basalt[0], region_mix),
-            self._lerp(base[1], basalt[1], region_mix * 0.7),
-            self._lerp(base[2], basalt[2], region_mix * 0.5),
-        )
-        highlight_factor = 0.4 + 0.6 * math.sin(angle * 2.0 + lat * 4.0)
-        mix_color = (
-            self._lerp(mix_color[0], highlights[0], highlight_factor * 0.15),
-            self._lerp(mix_color[1], highlights[1], highlight_factor * 0.15),
-            self._lerp(mix_color[2], highlights[2], highlight_factor * 0.15),
-        )
-        return mix_color
+            basin_strength += ang_falloff * lat_falloff * strength
+        basin_strength = max(0.0, min(1.0, basin_strength))
 
-    @staticmethod
-    def _lerp(a: float, b: float, t: float) -> float:
-        return a + (b - a) * max(0.0, min(1.0, t))
+        # Local detail
+        noise = math.sin(angle * 9.0 + lat * 15.0) * 0.25
+        # Highland factor – sharpened vs basins
+        highland_factor = self._clamp01((1.0 - basin_strength) * 1.2 + noise * 0.4)
+
+        r = mid_tone[0]
+        g = mid_tone[1]
+        b = mid_tone[2]
+
+        # Blend towards dark basins
+        r = self._lerp(r, dark_basin[0], basin_strength * 0.9)
+        g = self._lerp(g, dark_basin[1], basin_strength * 0.9)
+        b = self._lerp(b, dark_basin[2], basin_strength * 0.9)
+
+        # Blend towards bright dusty highlands
+        r = self._lerp(r, bright_highland[0], highland_factor * 0.9)
+        g = self._lerp(g, bright_highland[1], highland_factor * 0.9)
+        b = self._lerp(b, bright_highland[2], highland_factor * 0.9)
+
+        # Canyon band near equator
+        canyon_lat_band = max(0.0, 1.0 - abs(lat + 0.05) * 7.0)
+        canyon_long_wave = max(0.0, math.sin(angle * 3.1 - 0.4))
+        canyon = canyon_lat_band * canyon_long_wave
+        if canyon > 0.0:
+            r -= canyon * 0.22
+            g -= canyon * 0.14
+            b -= canyon * 0.10
+
+        # Time-varying dust storms (bright patches)
+        dust = 0.5 + 0.5 * math.sin(angle * 4.5 + self._elapsed * 0.7 + lat * 3.7)
+        dust *= 0.30
+        r += dust * 0.16
+        g += dust * 0.10
+        b += dust * 0.06
+
+        # Polar caps
+        ice = self._smoothstep(0.8, 0.93, abs(lat))
+        ice_color = (0.96, 0.97, 1.0)
+        r = self._lerp(r, ice_color[0], ice)
+        g = self._lerp(g, ice_color[1], ice)
+        b = self._lerp(b, ice_color[2], ice)
+
+        r = self._clamp01(r)
+        g = self._clamp01(g)
+        b = self._clamp01(b)
+        return (r, g, b)
 
     @staticmethod
     def _wrapped_angle_distance(angle: float, reference: float) -> float:
