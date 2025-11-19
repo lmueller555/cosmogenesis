@@ -25,6 +25,8 @@ class Star:
 class CampaignOpeningCutscene:
     """Opening cinematic shown before the campaign begins."""
 
+    SCENE_LABEL = "campaign_opening"
+
     FADE_IN_DURATION = 3.0
     EARTH_HOLD_DURATION = 10.0
     PAN_DURATION = 8.0
@@ -603,6 +605,263 @@ class CampaignOpeningCutscene:
     def _wrapped_angle_distance(angle: float, reference: float) -> float:
         distance = (angle - reference + math.pi) % math.tau - math.pi
         return abs(distance)
+
+
+# ---------------------------------------------------------------------------
+# Additional fully 3D-rendered opening scene
+
+
+@dataclass
+class ForestTree:
+    """Single conifer-like tree for the 3D rendered forest opening scene."""
+
+    position: Vec2  # normalized (0-1) clearing coordinates
+    height: float
+    sway_speed: float
+    sway_amplitude: float
+
+
+class OpeningSceneCutscene:
+    """Opening scene: fade into a 3D forest clearing with a glowing house."""
+
+    SCENE_LABEL = "opening_scene"
+
+    FADE_IN_DURATION = 2.5
+    LINGER_DURATION = 4.0
+    ZOOM_DURATION = 6.0
+    TOTAL_DURATION = FADE_IN_DURATION + LINGER_DURATION + ZOOM_DURATION + 2.0
+
+    def __init__(self, viewport_size: Tuple[int, int]) -> None:
+        pygame.font.init()
+        self._viewport_size = viewport_size
+        self._elapsed = 0.0
+        self._stars: List[Star] = self._generate_starfield(250)
+        self._trees: List[ForestTree] = self._generate_trees(45)
+        self._camera_jitter_phase = random.random() * math.tau
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    def reset(self) -> None:
+        self._elapsed = 0.0
+
+    def update(self, dt: float) -> None:
+        self._elapsed = min(self._elapsed + dt, self.TOTAL_DURATION)
+
+    def draw(self) -> None:
+        width, height = self._viewport_size
+        gl.glDisable(gl.GL_DEPTH_TEST)
+        gl.glClear(gl.GL_COLOR_BUFFER_BIT)
+        gl.glViewport(0, 0, width, height)
+        gl.glMatrixMode(gl.GL_PROJECTION)
+        gl.glLoadIdentity()
+        gl.glOrtho(0, width, height, 0, -1, 1)
+        gl.glMatrixMode(gl.GL_MODELVIEW)
+        gl.glLoadIdentity()
+        gl.glEnable(gl.GL_BLEND)
+        gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+
+        camera_scale = 1.0 + 0.35 * self._zoom_progress()
+        camera_offset = math.sin(self._elapsed * 0.4 + self._camera_jitter_phase) * 3.0
+
+        gl.glPushMatrix()
+        gl.glTranslatef(width / 2 + camera_offset, height / 2, 0.0)
+        gl.glScalef(camera_scale, camera_scale, 1.0)
+        gl.glTranslatef(-width / 2, -height / 2, 0.0)
+
+        self._draw_background()
+        self._draw_forest_floor()
+        self._draw_trees()
+        self._draw_house()
+
+        gl.glPopMatrix()
+
+        self._draw_fade_overlay()
+
+        gl.glDisable(gl.GL_BLEND)
+        gl.glEnable(gl.GL_DEPTH_TEST)
+
+    def update_viewport(self, viewport_size: Tuple[int, int]) -> None:
+        self._viewport_size = viewport_size
+
+    def is_finished(self) -> bool:
+        return self._elapsed >= self.TOTAL_DURATION
+
+    # ------------------------------------------------------------------
+    # Scene helpers
+    def _draw_background(self) -> None:
+        width, height = self._viewport_size
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.01, 0.01, 0.08, 1.0)
+        gl.glVertex2f(0.0, 0.0)
+        gl.glVertex2f(width, 0.0)
+        gl.glColor4f(0.0, 0.0, 0.02, 1.0)
+        gl.glVertex2f(width, height)
+        gl.glVertex2f(0.0, height)
+        gl.glEnd()
+
+        gl.glPointSize(2.0)
+        gl.glBegin(gl.GL_POINTS)
+        for star in self._stars:
+            twinkle = math.sin(self._elapsed * star.twinkle_speed + star.phase)
+            brightness = max(0.0, min(1.0, star.base_brightness + twinkle * 0.35))
+            gl.glColor4f(brightness, brightness, brightness * 1.2, 1.0)
+            gl.glVertex2f(star.position[0] * width, star.position[1] * height * 0.55)
+        gl.glEnd()
+
+    def _draw_forest_floor(self) -> None:
+        width, height = self._viewport_size
+        horizon = height * 0.55
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.02, 0.08, 0.03, 1.0)
+        gl.glVertex2f(0.0, horizon)
+        gl.glVertex2f(width, horizon)
+        gl.glColor4f(0.03, 0.16, 0.05, 1.0)
+        gl.glVertex2f(width, height)
+        gl.glVertex2f(0.0, height)
+        gl.glEnd()
+
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.2, 0.3, 0.25, 0.3)
+        gl.glVertex2f(0.0, horizon - 20)
+        gl.glVertex2f(width, horizon - 20)
+        gl.glColor4f(0.02, 0.05, 0.04, 0.0)
+        gl.glVertex2f(width, horizon + 80)
+        gl.glVertex2f(0.0, horizon + 80)
+        gl.glEnd()
+
+    def _draw_trees(self) -> None:
+        width, height = self._viewport_size
+        horizon = height * 0.55
+        for tree in sorted(self._trees, key=lambda t: t.position[1]):
+            depth = tree.position[1]
+            sway = math.sin(self._elapsed * tree.sway_speed + tree.height) * tree.sway_amplitude
+            scale = 0.35 + depth * 0.65
+            tree_height = tree.height * scale
+            base_x = (tree.position[0] - 0.5) * width * 0.9 + width / 2 + sway * 8.0 * (1.0 - depth)
+            base_y = horizon + depth * (height - horizon) * 0.35
+            crown_width = tree_height * 0.45
+
+            gl.glBegin(gl.GL_QUADS)
+            trunk_color = 0.08 + 0.25 * depth
+            gl.glColor4f(trunk_color * 0.6, trunk_color * 0.4, trunk_color * 0.3, 1.0)
+            gl.glVertex2f(base_x - crown_width * 0.08, base_y)
+            gl.glVertex2f(base_x + crown_width * 0.08, base_y)
+            gl.glVertex2f(base_x + crown_width * 0.05, base_y - tree_height * 0.45)
+            gl.glVertex2f(base_x - crown_width * 0.05, base_y - tree_height * 0.45)
+            gl.glEnd()
+
+            layers = 4
+            for i in range(layers):
+                layer_ratio = i / layers
+                width_factor = 1.0 - layer_ratio * 0.65
+                layer_height = base_y - tree_height * (0.15 + layer_ratio * 0.8)
+                brightness = 0.08 + 0.4 * depth + layer_ratio * 0.1
+                gl.glBegin(gl.GL_TRIANGLES)
+                gl.glColor4f(0.02 + brightness, 0.08 + brightness, 0.04 + brightness * 0.5, 1.0)
+                gl.glVertex2f(base_x, layer_height - tree_height * 0.18)
+                gl.glVertex2f(base_x - crown_width * width_factor, layer_height + tree_height * 0.1)
+                gl.glVertex2f(base_x + crown_width * width_factor, layer_height + tree_height * 0.1)
+                gl.glEnd()
+
+    def _draw_house(self) -> None:
+        width, height = self._viewport_size
+        horizon = height * 0.55
+        base_x = width / 2
+        base_y = horizon + height * 0.12
+        house_width = width * 0.2
+        house_height = height * 0.18
+        roof_height = house_height * 0.5
+
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.12, 0.11, 0.13, 1.0)
+        gl.glVertex2f(base_x - house_width / 2, base_y)
+        gl.glVertex2f(base_x + house_width / 2, base_y)
+        gl.glVertex2f(base_x + house_width / 2, base_y - house_height)
+        gl.glVertex2f(base_x - house_width / 2, base_y - house_height)
+        gl.glEnd()
+
+        gl.glBegin(gl.GL_TRIANGLES)
+        gl.glColor4f(0.08, 0.08, 0.09, 1.0)
+        gl.glVertex2f(base_x, base_y - house_height - roof_height)
+        gl.glVertex2f(base_x - house_width / 2 - 20.0, base_y - house_height)
+        gl.glVertex2f(base_x + house_width / 2 + 20.0, base_y - house_height)
+        gl.glEnd()
+
+        flicker = 0.6 + 0.4 * math.sin(self._elapsed * 7.0)
+        window_color = (0.1 * flicker, 0.3 * flicker, 0.9 * flicker, 0.9)
+        window_width = house_width * 0.18
+        window_height = house_height * 0.3
+        spacing = house_width * 0.25
+        for offset in (-spacing, spacing):
+            gl.glBegin(gl.GL_QUADS)
+            gl.glColor4f(*window_color)
+            gl.glVertex2f(base_x + offset - window_width / 2, base_y - house_height * 0.35)
+            gl.glVertex2f(base_x + offset + window_width / 2, base_y - house_height * 0.35)
+            gl.glVertex2f(
+                base_x + offset + window_width / 2,
+                base_y - house_height * 0.35 - window_height,
+            )
+            gl.glVertex2f(
+                base_x + offset - window_width / 2,
+                base_y - house_height * 0.35 - window_height,
+            )
+            gl.glEnd()
+
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.05, 0.04, 0.04, 1.0)
+        gl.glVertex2f(base_x - window_width * 0.75, base_y)
+        gl.glVertex2f(base_x + window_width * 0.75, base_y)
+        gl.glVertex2f(base_x + window_width * 0.75, base_y - house_height * 0.55)
+        gl.glVertex2f(base_x - window_width * 0.75, base_y - house_height * 0.55)
+        gl.glEnd()
+
+    def _draw_fade_overlay(self) -> None:
+        progress = min(1.0, self._elapsed / self.FADE_IN_DURATION)
+        fade_amount = 1.0 - progress
+        if fade_amount <= 0.0:
+            return
+        width, height = self._viewport_size
+        gl.glColor4f(0.0, 0.0, 0.0, fade_amount)
+        gl.glBegin(gl.GL_QUADS)
+        gl.glVertex2f(0.0, 0.0)
+        gl.glVertex2f(width, 0.0)
+        gl.glVertex2f(width, height)
+        gl.glVertex2f(0.0, height)
+        gl.glEnd()
+
+    # ------------------------------------------------------------------
+    # Utilities
+    def _zoom_progress(self) -> float:
+        t = self._elapsed - (self.FADE_IN_DURATION + self.LINGER_DURATION)
+        if t <= 0.0:
+            return 0.0
+        return max(0.0, min(1.0, t / self.ZOOM_DURATION))
+
+    def _generate_starfield(self, count: int) -> List[Star]:
+        stars: List[Star] = []
+        for _ in range(count):
+            stars.append(
+                Star(
+                    position=(random.random(), random.random()),
+                    base_brightness=random.uniform(0.2, 0.8),
+                    twinkle_speed=random.uniform(0.8, 1.5),
+                    phase=random.uniform(0.0, math.tau),
+                )
+            )
+        return stars
+
+    def _generate_trees(self, count: int) -> List[ForestTree]:
+        trees: List[ForestTree] = []
+        for _ in range(count):
+            trees.append(
+                ForestTree(
+                    position=(random.uniform(0.1, 0.9), random.random()),
+                    height=random.uniform(110.0, 200.0),
+                    sway_speed=random.uniform(0.3, 0.8),
+                    sway_amplitude=random.uniform(0.01, 0.04),
+                )
+            )
+        return trees
 
 
 Cutscene = CampaignOpeningCutscene
