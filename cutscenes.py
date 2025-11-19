@@ -4,12 +4,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 import random
-from typing import List, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 import pygame
 from OpenGL import GL as gl
 
 Vec2 = Tuple[float, float]
+Vec3 = Tuple[float, float, float]
 
 
 @dataclass
@@ -621,6 +622,15 @@ class ForestTree:
     sway_amplitude: float
 
 
+@dataclass
+class SceneCamera:
+    """Simple perspective camera used for the 3D vignette rendering."""
+
+    position: Vec3
+    target: Vec3
+    fov: float
+
+
 class OpeningSceneCutscene:
     """Opening scene featuring two sequential vignettes."""
 
@@ -704,38 +714,18 @@ class OpeningSceneCutscene:
         gl.glEnable(gl.GL_DEPTH_TEST)
 
     def _draw_scene1(self) -> None:
-        width, height = self._viewport_size
-        camera_scale = 1.0 + 0.35 * self._scene1_zoom_progress()
-        camera_offset = math.sin(self._elapsed * 0.4 + self._camera_jitter_phase) * 3.0
-
-        gl.glPushMatrix()
-        gl.glTranslatef(width / 2 + camera_offset, height / 2, 0.0)
-        gl.glScalef(camera_scale, camera_scale, 1.0)
-        gl.glTranslatef(-width / 2, -height / 2, 0.0)
-
+        camera = self._scene1_camera()
         self._draw_scene1_background()
-        self._draw_scene1_forest_floor()
-        self._draw_scene1_trees()
-        self._draw_scene1_house()
-
-        gl.glPopMatrix()
+        self._draw_scene1_forest_floor(camera)
+        self._draw_scene1_trees(camera)
+        self._draw_scene1_house(camera)
 
     def _draw_scene2(self, scene_time: float) -> None:
-        width, height = self._viewport_size
-        zoom = 1.0 + 0.18 * self._scene2_zoom_progress(scene_time)
-        pan_amount = self._scene2_pan_progress(scene_time) * width * 0.28
-
-        gl.glPushMatrix()
-        gl.glTranslatef(width / 2 + pan_amount, height / 2, 0.0)
-        gl.glScalef(zoom, zoom, 1.0)
-        gl.glTranslatef(-width / 2, -height / 2, 0.0)
-
-        self._draw_scene2_room_base(scene_time)
-        self._draw_scene2_furniture(scene_time)
-        self._draw_scene2_tv(scene_time)
-        self._draw_scene2_window(scene_time)
-
-        gl.glPopMatrix()
+        camera = self._scene2_camera(scene_time)
+        self._draw_scene2_room_base(scene_time, camera)
+        self._draw_scene2_furniture(scene_time, camera)
+        self._draw_scene2_tv(scene_time, camera)
+        self._draw_scene2_window(scene_time, camera)
 
     def update_viewport(self, viewport_size: Tuple[int, int]) -> None:
         self._viewport_size = viewport_size
@@ -765,116 +755,166 @@ class OpeningSceneCutscene:
             gl.glVertex2f(star.position[0] * width, star.position[1] * height * 0.55)
         gl.glEnd()
 
-    def _draw_scene1_forest_floor(self) -> None:
-        width, height = self._viewport_size
-        horizon = height * 0.55
-        gl.glBegin(gl.GL_QUADS)
-        gl.glColor4f(0.02, 0.08, 0.03, 1.0)
-        gl.glVertex2f(0.0, horizon)
-        gl.glVertex2f(width, horizon)
-        gl.glColor4f(0.03, 0.16, 0.05, 1.0)
-        gl.glVertex2f(width, height)
-        gl.glVertex2f(0.0, height)
-        gl.glEnd()
+    def _draw_scene1_forest_floor(self, camera: SceneCamera) -> None:
+        light_dir = self._normalized3((-0.35, -0.8, -0.45))
+        tile_count_x = 9
+        tile_count_z = 10
+        tile_size_x = 1.8
+        tile_size_z = 1.6
+        start_x = -tile_count_x * tile_size_x * 0.5
+        start_z = -3.8
+        faces = []
+        for ix in range(tile_count_x):
+            for iz in range(tile_count_z):
+                x0 = start_x + ix * tile_size_x
+                x1 = x0 + tile_size_x
+                z0 = start_z + iz * tile_size_z
+                z1 = z0 + tile_size_z
+                undulation = math.sin(ix * 0.7 + iz * 0.9) * 0.1
+                moss = math.sin(ix * 1.2 + self._elapsed * 0.4) * 0.04
+                vertices = [
+                    (x0, undulation * 0.5 + moss, z0),
+                    (x1, undulation * 0.2 + moss * 0.5, z0),
+                    (x1, undulation * 0.1 + moss * 0.2, z1),
+                    (x0, undulation * 0.4 + moss * 0.9, z1),
+                ]
+                base_color = (
+                    0.05 + ix * 0.005,
+                    0.14 + iz * 0.008,
+                    0.07 + undulation * 0.2,
+                )
+                wire_color = (0.28, 0.45, 0.3, 0.7)
+                faces.append((vertices, base_color, 0.92, wire_color))
+        self._render_face_batch(faces, camera, light_dir)
 
-        gl.glBegin(gl.GL_QUADS)
-        gl.glColor4f(0.2, 0.3, 0.25, 0.3)
-        gl.glVertex2f(0.0, horizon - 20)
-        gl.glVertex2f(width, horizon - 20)
-        gl.glColor4f(0.02, 0.05, 0.04, 0.0)
-        gl.glVertex2f(width, horizon + 80)
-        gl.glVertex2f(0.0, horizon + 80)
-        gl.glEnd()
-
-    def _draw_scene1_trees(self) -> None:
-        width, height = self._viewport_size
-        horizon = height * 0.55
-        for tree in sorted(self._trees, key=lambda t: t.position[1]):
+    def _draw_scene1_trees(self, camera: SceneCamera) -> None:
+        light_dir = self._normalized3((-0.25, -0.75, -0.35))
+        faces: List[Tuple[Sequence[Vec3], Tuple[float, float, float], float, Tuple[float, float, float, float]]] = []
+        for tree in self._trees:
             depth = tree.position[1]
-            sway = math.sin(self._elapsed * tree.sway_speed + tree.height) * tree.sway_amplitude
-            scale = 0.6 + depth * 0.4
-            tree_height = height * 0.85 * tree.height * scale
-            base_x = (tree.position[0] - 0.5) * width * 0.9 + width / 2 + sway * 8.0 * (1.0 - depth)
-            base_y = horizon + depth * (height - horizon) * 0.35
-            crown_width = tree_height * 0.38
+            sway = math.sin(self._elapsed * tree.sway_speed + tree.height)
+            sway *= tree.sway_amplitude * 120.0 * (1.0 - depth * 0.4)
+            base_x = (tree.position[0] - 0.5) * 10.0 + sway
+            base_z = -1.8 + depth * 7.5
+            trunk_height = 2.4 * tree.height
+            trunk_center = (base_x, trunk_height * 0.5, base_z)
+            trunk_size = (0.35 * (0.8 + depth * 0.4), trunk_height, 0.35 * (0.8 + depth * 0.4))
+            trunk_color = (0.1 + depth * 0.2, 0.06 + depth * 0.1, 0.04 + depth * 0.08)
+            self._append_prism_faces(
+                faces,
+                trunk_center,
+                trunk_size,
+                trunk_color,
+                (0.65, 0.5, 0.4, 0.9),
+                0.95,
+            )
 
-            gl.glBegin(gl.GL_QUADS)
-            trunk_color = 0.08 + 0.25 * depth
-            gl.glColor4f(trunk_color * 0.6, trunk_color * 0.4, trunk_color * 0.3, 1.0)
-            gl.glVertex2f(base_x - crown_width * 0.08, base_y)
-            gl.glVertex2f(base_x + crown_width * 0.08, base_y)
-            gl.glVertex2f(base_x + crown_width * 0.05, base_y - tree_height * 0.45)
-            gl.glVertex2f(base_x - crown_width * 0.05, base_y - tree_height * 0.45)
-            gl.glEnd()
+            canopy_layers = 3
+            canopy_base = trunk_height * 0.5
+            for layer in range(canopy_layers):
+                layer_height = trunk_height * (0.5 + layer * 0.35)
+                radius = 1.2 - layer * 0.35
+                color_scale = 0.35 + 0.2 * depth + layer * 0.05
+                center = (base_x, canopy_base + layer_height, base_z)
+                self._append_cone_faces(
+                    faces,
+                    center,
+                    radius,
+                    1.0,
+                    6,
+                    (0.05 + color_scale, 0.25 + color_scale * 0.5, 0.08 + color_scale * 0.3),
+                    (0.4, 0.75, 0.4, 0.8),
+                )
+        self._render_face_batch(faces, camera, light_dir)
 
-            layers = 4
-            for i in range(layers):
-                layer_ratio = i / layers
-                width_factor = 1.0 - layer_ratio * 0.65
-                layer_height = base_y - tree_height * (0.15 + layer_ratio * 0.8)
-                brightness = 0.08 + 0.4 * depth + layer_ratio * 0.1
-                gl.glBegin(gl.GL_TRIANGLES)
-                gl.glColor4f(0.02 + brightness, 0.08 + brightness, 0.04 + brightness * 0.5, 1.0)
-                gl.glVertex2f(base_x, layer_height - tree_height * 0.18)
-                gl.glVertex2f(base_x - crown_width * width_factor, layer_height + tree_height * 0.1)
-                gl.glVertex2f(base_x + crown_width * width_factor, layer_height + tree_height * 0.1)
-                gl.glEnd()
+    def _draw_scene1_house(self, camera: SceneCamera) -> None:
+        light_dir = self._normalized3((-0.35, -0.7, -0.4))
+        body_center = (0.0, 1.4, 0.2)
+        body_size = (4.8, 2.6, 3.4)
+        faces: List[Tuple[Sequence[Vec3], Tuple[float, float, float], float, Tuple[float, float, float, float]]] = []
+        self._append_prism_faces(
+            faces,
+            body_center,
+            body_size,
+            (0.16, 0.12, 0.18),
+            (0.9, 0.8, 0.95, 0.9),
+            0.98,
+        )
 
-    def _draw_scene1_house(self) -> None:
-        width, height = self._viewport_size
-        horizon = height * 0.55
-        base_x = width / 2
-        base_y = horizon + height * 0.12
-        house_width = width * 0.2
-        house_height = height * 0.18
-        roof_height = house_height * 0.5
-
-        gl.glBegin(gl.GL_QUADS)
-        gl.glColor4f(0.12, 0.11, 0.13, 1.0)
-        gl.glVertex2f(base_x - house_width / 2, base_y)
-        gl.glVertex2f(base_x + house_width / 2, base_y)
-        gl.glVertex2f(base_x + house_width / 2, base_y - house_height)
-        gl.glVertex2f(base_x - house_width / 2, base_y - house_height)
-        gl.glEnd()
-
-        gl.glBegin(gl.GL_TRIANGLES)
-        gl.glColor4f(0.08, 0.08, 0.09, 1.0)
-        gl.glVertex2f(base_x, base_y - house_height - roof_height)
-        gl.glVertex2f(base_x - house_width / 2 - 20.0, base_y - house_height)
-        gl.glVertex2f(base_x + house_width / 2 + 20.0, base_y - house_height)
-        gl.glEnd()
+        half_w = body_size[0] / 2 + 0.1
+        half_d = body_size[2] / 2 + 0.1
+        top_y = body_center[1] + body_size[1] / 2
+        ridge_y = top_y + 1.5
+        ridge_front = (0.0, ridge_y, half_d)
+        ridge_back = (0.0, ridge_y, -half_d)
+        roof_vertices = [
+            (-half_w, top_y, half_d),
+            (half_w, top_y, half_d),
+            (half_w, top_y, -half_d),
+            (-half_w, top_y, -half_d),
+        ]
+        faces.append((
+            [roof_vertices[0], roof_vertices[1], ridge_front],
+            (0.11, 0.09, 0.12),
+            0.97,
+            (0.85, 0.7, 0.6, 0.9),
+        ))
+        faces.append((
+            [roof_vertices[1], roof_vertices[2], ridge_back, ridge_front],
+            (0.09, 0.07, 0.1),
+            0.97,
+            (0.85, 0.7, 0.6, 0.9),
+        ))
+        faces.append((
+            [roof_vertices[2], roof_vertices[3], ridge_back],
+            (0.11, 0.09, 0.12),
+            0.97,
+            (0.85, 0.7, 0.6, 0.9),
+        ))
+        faces.append((
+            [roof_vertices[3], roof_vertices[0], ridge_front, ridge_back],
+            (0.09, 0.07, 0.1),
+            0.97,
+            (0.85, 0.7, 0.6, 0.9),
+        ))
 
         flicker = 0.65
         flicker += 0.25 * math.sin(self._elapsed * 8.7 + self._flicker_offsets[0])
         flicker += 0.15 * math.sin(self._elapsed * 15.3 + self._flicker_offsets[1])
         flicker += 0.1 * math.sin(self._elapsed * 24.1 + self._camera_jitter_phase * 0.5)
         flicker = self._clamp01(flicker)
-        window_color = (0.1 * flicker, 0.3 * flicker, 0.9 * flicker, 0.9)
-        window_width = house_width * 0.18
-        window_height = house_height * 0.3
-        spacing = house_width * 0.25
-        for offset in (-spacing, spacing):
-            gl.glBegin(gl.GL_QUADS)
-            gl.glColor4f(*window_color)
-            gl.glVertex2f(base_x + offset - window_width / 2, base_y - house_height * 0.35)
-            gl.glVertex2f(base_x + offset + window_width / 2, base_y - house_height * 0.35)
-            gl.glVertex2f(
-                base_x + offset + window_width / 2,
-                base_y - house_height * 0.35 - window_height,
-            )
-            gl.glVertex2f(
-                base_x + offset - window_width / 2,
-                base_y - house_height * 0.35 - window_height,
-            )
-            gl.glEnd()
+        window_light = (0.1 * flicker, 0.35 * flicker, 0.9 * flicker)
+        window_width = 0.7
+        window_height = 0.9
+        front_z = body_center[2] + body_size[2] / 2 + 0.01
+        for offset in (-1.25, 1.25):
+            frame = [
+                (offset - window_width / 2, top_y - 0.6, front_z),
+                (offset + window_width / 2, top_y - 0.6, front_z),
+                (offset + window_width / 2, top_y - window_height - 0.6, front_z),
+                (offset - window_width / 2, top_y - window_height - 0.6, front_z),
+            ]
+            faces.append((frame, window_light, 0.95, (0.4, 0.6, 0.95, 0.8)))
 
-        gl.glBegin(gl.GL_QUADS)
-        gl.glColor4f(0.05, 0.04, 0.04, 1.0)
-        gl.glVertex2f(base_x - window_width * 0.75, base_y)
-        gl.glVertex2f(base_x + window_width * 0.75, base_y)
-        gl.glVertex2f(base_x + window_width * 0.75, base_y - house_height * 0.55)
-        gl.glVertex2f(base_x - window_width * 0.75, base_y - house_height * 0.55)
-        gl.glEnd()
+        door_width = 1.0
+        door_height = 1.7
+        door = [
+            (-door_width / 2, body_center[1] - body_size[1] / 2 + door_height, front_z),
+            (door_width / 2, body_center[1] - body_size[1] / 2 + door_height, front_z),
+            (door_width / 2, body_center[1] - body_size[1] / 2, front_z),
+            (-door_width / 2, body_center[1] - body_size[1] / 2, front_z),
+        ]
+        faces.append((door, (0.2, 0.12, 0.08), 0.98, (0.9, 0.7, 0.5, 0.9)))
+
+        walkway = [
+            (-1.2, 0.02, body_center[2] + body_size[2] / 2 + 0.6),
+            (1.2, 0.02, body_center[2] + body_size[2] / 2 + 0.6),
+            (1.6, 0.0, body_center[2] + body_size[2] / 2 + 2.4),
+            (-1.6, 0.0, body_center[2] + body_size[2] / 2 + 2.4),
+        ]
+        faces.append((walkway, (0.25, 0.2, 0.15), 0.85, (0.6, 0.45, 0.3, 0.7)))
+
+        self._render_face_batch(faces, camera, light_dir)
 
     def _draw_scene1_fade_overlay(self) -> None:
         scene_time = min(self._elapsed, self.SCENE1_TOTAL_DURATION)
@@ -901,240 +941,225 @@ class OpeningSceneCutscene:
 
     # ------------------------------------------------------------------
     # Scene 2 helpers
-    def _draw_scene2_room_base(self, scene_time: float) -> None:
-        width, height = self._viewport_size
-        floor_y = height * 0.66
+    def _draw_scene2_room_base(self, scene_time: float, camera: SceneCamera) -> None:
         lamp_intensity = 0.35 + 0.25 * math.sin(scene_time * 2.0 + self._scene2_lamp_phase)
         lamp_intensity = self._clamp01(lamp_intensity)
+        room_width = 11.0
+        room_depth = 7.2
+        room_height = 4.2
+        front_z = 2.0
+        back_z = -room_depth
+        light_dir = self._normalized3((-0.2, -0.6, -0.8))
+        faces: List[
+            Tuple[Sequence[Vec3], Tuple[float, float, float], float, Tuple[float, float, float, float]]
+        ] = []
 
-        top_color = (
-            0.07 + lamp_intensity * 0.15,
-            0.08 + lamp_intensity * 0.12,
-            0.15 + lamp_intensity * 0.2,
-            1.0,
-        )
-        bottom_color = (
-            0.02 + lamp_intensity * 0.08,
-            0.02 + lamp_intensity * 0.06,
-            0.05 + lamp_intensity * 0.12,
-            1.0,
-        )
-        gl.glBegin(gl.GL_QUADS)
-        gl.glColor4f(*top_color)
-        gl.glVertex2f(0.0, 0.0)
-        gl.glVertex2f(width, 0.0)
-        gl.glColor4f(*bottom_color)
-        gl.glVertex2f(width, floor_y)
-        gl.glVertex2f(0.0, floor_y)
-        gl.glEnd()
+        floor = [
+            (-room_width / 2, 0.0, front_z),
+            (room_width / 2, 0.0, front_z),
+            (room_width / 2, 0.0, back_z),
+            (-room_width / 2, 0.0, back_z),
+        ]
+        floor_color = (0.16 + lamp_intensity * 0.1, 0.11 + lamp_intensity * 0.08, 0.08)
+        faces.append((floor, floor_color, 0.95, (0.7, 0.5, 0.35, 0.8)))
 
-        gl.glBegin(gl.GL_QUADS)
-        gl.glColor4f(0.12, 0.09, 0.07, 1.0)
-        gl.glVertex2f(0.0, floor_y)
-        gl.glVertex2f(width, floor_y)
-        gl.glColor4f(0.06, 0.04, 0.03, 1.0)
-        gl.glVertex2f(width, height)
-        gl.glVertex2f(0.0, height)
-        gl.glEnd()
-
-        gl.glBegin(gl.GL_QUADS)
-        gl.glColor4f(0.1, 0.08, 0.06, 1.0)
-        gl.glVertex2f(0.0, floor_y - 6)
-        gl.glVertex2f(width, floor_y - 6)
-        gl.glVertex2f(width, floor_y)
-        gl.glVertex2f(0.0, floor_y)
-        gl.glEnd()
-
-        plank_count = 18
-        gl.glBegin(gl.GL_LINES)
-        gl.glColor4f(0.08, 0.05, 0.03, 0.35)
-        for index in range(plank_count + 1):
-            x = width * (index / plank_count)
-            gl.glVertex2f(x, floor_y)
-            gl.glVertex2f(x, height)
-        gl.glEnd()
-
-        rug_radius_x = width * 0.22
-        rug_radius_y = height * 0.08
-        rug_center_x = width * 0.45
-        rug_center_y = floor_y + height * 0.16
-        gl.glBegin(gl.GL_TRIANGLE_FAN)
-        gl.glColor4f(0.08, 0.05, 0.12, 0.8)
-        gl.glVertex2f(rug_center_x, rug_center_y)
-        for angle in range(0, 361, 10):
-            rad = math.radians(angle)
-            gl.glColor4f(0.14, 0.09, 0.24, 0.6)
-            gl.glVertex2f(
-                rug_center_x + math.cos(rad) * rug_radius_x,
-                rug_center_y + math.sin(rad) * rug_radius_y,
+        ceiling = [
+            (-room_width / 2, room_height, front_z * 0.2),
+            (room_width / 2, room_height, front_z * 0.2),
+            (room_width / 2, room_height, back_z),
+            (-room_width / 2, room_height, back_z),
+        ]
+        faces.append(
+            (
+                ceiling,
+                (0.1 + lamp_intensity * 0.2, 0.12 + lamp_intensity * 0.18, 0.18 + lamp_intensity * 0.25),
+                0.9,
+                (0.4, 0.4, 0.5, 0.6),
             )
-        gl.glEnd()
+        )
 
-        frame_top = floor_y * 0.45
-        frame_height = floor_y * 0.22
-        for i in range(3):
-            frame_width = width * 0.11
-            gap = width * 0.02
-            x = width * 0.08 + i * (frame_width + gap)
-            gl.glBegin(gl.GL_QUADS)
-            gl.glColor4f(0.25, 0.2, 0.15, 1.0)
-            gl.glVertex2f(x, frame_top)
-            gl.glVertex2f(x + frame_width, frame_top)
-            gl.glVertex2f(x + frame_width, frame_top + frame_height)
-            gl.glVertex2f(x, frame_top + frame_height)
-            gl.glEnd()
+        back_wall = [
+            (-room_width / 2, room_height, back_z),
+            (room_width / 2, room_height, back_z),
+            (room_width / 2, 0.0, back_z),
+            (-room_width / 2, 0.0, back_z),
+        ]
+        faces.append(
+            (
+                back_wall,
+                (0.07 + lamp_intensity * 0.12, 0.08 + lamp_intensity * 0.12, 0.14 + lamp_intensity * 0.2),
+                0.95,
+                (0.45, 0.4, 0.35, 0.8),
+            )
+        )
 
-            gl.glBegin(gl.GL_QUADS)
-            gl.glColor4f(0.12 + 0.02 * i, 0.14, 0.18 + 0.02 * i, 0.6)
-            gl.glVertex2f(x + 8, frame_top + 8)
-            gl.glVertex2f(x + frame_width - 8, frame_top + 8)
-            gl.glVertex2f(x + frame_width - 8, frame_top + frame_height - 8)
-            gl.glVertex2f(x + 8, frame_top + frame_height - 8)
-            gl.glEnd()
+        left_wall = [
+            (-room_width / 2, room_height, front_z),
+            (-room_width / 2, room_height, back_z),
+            (-room_width / 2, 0.0, back_z),
+            (-room_width / 2, 0.0, front_z),
+        ]
+        right_wall = [
+            (room_width / 2, room_height, back_z),
+            (room_width / 2, room_height, front_z),
+            (room_width / 2, 0.0, front_z),
+            (room_width / 2, 0.0, back_z),
+        ]
+        wall_color = (0.06 + lamp_intensity * 0.1, 0.05 + lamp_intensity * 0.08, 0.09 + lamp_intensity * 0.16)
+        faces.append((left_wall, wall_color, 0.9, (0.4, 0.35, 0.3, 0.7)))
+        faces.append((right_wall, wall_color, 0.9, (0.4, 0.35, 0.3, 0.7)))
 
-    def _draw_scene2_furniture(self, scene_time: float) -> None:
-        width, height = self._viewport_size
-        floor_y = height * 0.66
+        rug = [
+            (-0.5, 0.01, -0.5),
+            (3.2, 0.01, -0.3),
+            (2.6, 0.01, -3.2),
+            (-0.9, 0.01, -3.5),
+        ]
+        faces.append((rug, (0.12, 0.07, 0.18), 0.85, (0.7, 0.45, 0.9, 0.6)))
 
-        sofa_width = width * 0.4
-        sofa_height = height * 0.14
-        sofa_x = width * 0.12
-        sofa_y = floor_y - sofa_height * 0.4
+        frame_height = 1.4
+        frame_width = 0.9
+        for index in range(3):
+            frame_x = -room_width / 2 + 0.6
+            offset_y = 1.2 + index * 0.6
+            art = [
+                (frame_x + 0.01, offset_y + frame_height, -room_depth + 0.02),
+                (frame_x + frame_width, offset_y + frame_height, -room_depth + 0.02),
+                (frame_x + frame_width, offset_y, -room_depth + 0.02),
+                (frame_x + 0.01, offset_y, -room_depth + 0.02),
+            ]
+            faces.append((art, (0.15 + index * 0.05, 0.12, 0.18 + index * 0.03), 0.75, (0.6, 0.5, 0.4, 0.7)))
 
-        gl.glBegin(gl.GL_QUADS)
-        gl.glColor4f(0.18, 0.22, 0.32, 1.0)
-        gl.glVertex2f(sofa_x, sofa_y)
-        gl.glVertex2f(sofa_x + sofa_width, sofa_y)
-        gl.glVertex2f(sofa_x + sofa_width, sofa_y + sofa_height)
-        gl.glVertex2f(sofa_x, sofa_y + sofa_height)
-        gl.glEnd()
+        self._render_face_batch(faces, camera, light_dir)
 
-        gl.glBegin(gl.GL_QUADS)
-        gl.glColor4f(0.14, 0.17, 0.25, 1.0)
-        gl.glVertex2f(sofa_x, sofa_y - sofa_height * 0.4)
-        gl.glVertex2f(sofa_x + sofa_width, sofa_y - sofa_height * 0.4)
-        gl.glVertex2f(sofa_x + sofa_width, sofa_y)
-        gl.glVertex2f(sofa_x, sofa_y)
-        gl.glEnd()
+    def _draw_scene2_furniture(self, scene_time: float, camera: SceneCamera) -> None:
+        light_dir = self._normalized3((-0.3, -0.7, -0.4))
+        faces: List[
+            Tuple[Sequence[Vec3], Tuple[float, float, float], float, Tuple[float, float, float, float]]
+        ] = []
+
+        sofa_center = (-3.2, 0.9, -0.4)
+        sofa_size = (3.6, 1.1, 1.5)
+        self._append_prism_faces(
+            faces,
+            sofa_center,
+            sofa_size,
+            (0.14, 0.19, 0.26),
+            (0.5, 0.7, 0.85, 0.85),
+            0.95,
+        )
+        back_center = (-3.2, 1.6, -0.9)
+        back_size = (3.6, 1.2, 0.4)
+        self._append_prism_faces(
+            faces,
+            back_center,
+            back_size,
+            (0.12, 0.16, 0.23),
+            (0.4, 0.6, 0.8, 0.8),
+            0.95,
+        )
 
         cushion_colors = (
             (0.95, 0.75, 0.35),
             (0.6, 0.75, 0.9),
         )
         for index, color in enumerate(cushion_colors):
-            offset = sofa_width * 0.2 * index
-            gl.glBegin(gl.GL_QUADS)
-            gl.glColor4f(color[0], color[1], color[2], 1.0)
-            gl.glVertex2f(sofa_x + sofa_width * 0.15 + offset, sofa_y - sofa_height * 0.25)
-            gl.glVertex2f(
-                sofa_x + sofa_width * 0.28 + offset,
-                sofa_y - sofa_height * 0.25,
+            center = (-4.2 + index * 1.4, 1.4, -0.4)
+            size = (0.9, 0.5, 0.4)
+            self._append_prism_faces(
+                faces,
+                center,
+                size,
+                color,
+                (0.95, 0.95, 0.95, 0.8),
+                0.9,
             )
-            gl.glVertex2f(
-                sofa_x + sofa_width * 0.28 + offset,
-                sofa_y - sofa_height * 0.05,
+
+        table_center = (1.6, 0.5, 0.2)
+        table_size = (2.3, 0.4, 1.2)
+        self._append_prism_faces(
+            faces,
+            table_center,
+            table_size,
+            (0.22, 0.15, 0.08),
+            (0.8, 0.6, 0.4, 0.85),
+            0.9,
+        )
+        for offset in (-0.85, 0.85):
+            leg_center = (table_center[0] + offset, 0.2, table_center[2] + 0.45)
+            self._append_prism_faces(
+                faces,
+                leg_center,
+                (0.2, 0.4, 0.2),
+                (0.16, 0.1, 0.06),
+                (0.5, 0.35, 0.25, 0.8),
+                0.9,
             )
-            gl.glVertex2f(sofa_x + sofa_width * 0.15 + offset, sofa_y - sofa_height * 0.05)
-            gl.glEnd()
 
-        gl.glBegin(gl.GL_QUADS)
-        gl.glColor4f(0.22, 0.15, 0.08, 1.0)
-        table_width = width * 0.22
-        table_height = height * 0.02
-        table_x = width * 0.42
-        table_y = floor_y + height * 0.08
-        gl.glVertex2f(table_x, table_y)
-        gl.glVertex2f(table_x + table_width, table_y)
-        gl.glVertex2f(table_x + table_width, table_y + table_height)
-        gl.glVertex2f(table_x, table_y + table_height)
-        gl.glEnd()
-
-        leg_width = table_width * 0.05
-        gl.glBegin(gl.GL_QUADS)
-        for offset in (0.08, 0.92):
-            x = table_x + table_width * offset - leg_width / 2
-            gl.glColor4f(0.12, 0.08, 0.05, 1.0)
-            gl.glVertex2f(x, table_y + table_height)
-            gl.glVertex2f(x + leg_width, table_y + table_height)
-            gl.glVertex2f(x + leg_width, table_y + table_height + height * 0.08)
-            gl.glVertex2f(x, table_y + table_height + height * 0.08)
-        gl.glEnd()
-
-        vase_center_x = table_x + table_width * 0.5
-        vase_center_y = table_y - height * 0.01
-        gl.glBegin(gl.GL_TRIANGLE_FAN)
-        gl.glColor4f(0.74, 0.76, 0.9, 0.9)
-        gl.glVertex2f(vase_center_x, vase_center_y)
-        for angle in range(0, 361, 20):
-            rad = math.radians(angle)
-            gl.glVertex2f(
-                vase_center_x + math.cos(rad) * width * 0.02,
-                vase_center_y - height * 0.04 + math.sin(rad) * height * 0.02,
-            )
-        gl.glEnd()
-
-        stem_top = vase_center_y - height * 0.12
-        gl.glBegin(gl.GL_LINES)
-        gl.glColor4f(0.3, 0.55, 0.3, 1.0)
-        gl.glVertex2f(vase_center_x, vase_center_y - height * 0.02)
-        gl.glVertex2f(vase_center_x - width * 0.01, stem_top)
-        gl.glVertex2f(vase_center_x, vase_center_y - height * 0.02)
-        gl.glVertex2f(vase_center_x + width * 0.008, stem_top * 0.99)
-        gl.glEnd()
-
-        gl.glBegin(gl.GL_TRIANGLE_FAN)
-        gl.glColor4f(0.95, 0.6, 0.2, 0.9)
-        gl.glVertex2f(vase_center_x - width * 0.008, stem_top)
-        for angle in range(0, 361, 30):
-            rad = math.radians(angle)
-            gl.glVertex2f(
-                vase_center_x - width * 0.008 + math.cos(rad) * width * 0.02,
-                stem_top + math.sin(rad) * width * 0.02,
-            )
-        gl.glEnd()
-
-    def _draw_scene2_tv(self, scene_time: float) -> None:
-        width, height = self._viewport_size
-        tv_width = width * 0.34
-        tv_height = height * 0.26
-        tv_center_x = width * 0.42
-        tv_x = tv_center_x - tv_width / 2
-        tv_y = height * 0.2
-
-        panel_padding = width * 0.015
-        gl.glBegin(gl.GL_QUADS)
-        gl.glColor4f(0.05, 0.05, 0.07, 0.85)
-        gl.glVertex2f(tv_x - panel_padding, tv_y - panel_padding)
-        gl.glVertex2f(tv_x + tv_width + panel_padding, tv_y - panel_padding)
-        gl.glVertex2f(tv_x + tv_width + panel_padding, tv_y + tv_height + panel_padding)
-        gl.glVertex2f(tv_x - panel_padding, tv_y + tv_height + panel_padding)
-        gl.glEnd()
-
-        gl.glBegin(gl.GL_QUADS)
-        gl.glColor4f(0.08, 0.08, 0.1, 1.0)
-        gl.glVertex2f(tv_x, tv_y)
-        gl.glVertex2f(tv_x + tv_width, tv_y)
-        gl.glVertex2f(tv_x + tv_width, tv_y + tv_height)
-        gl.glVertex2f(tv_x, tv_y + tv_height)
-        gl.glEnd()
-
-        screen_margin = width * 0.01
-        screen_rect = (
-            tv_x + screen_margin,
-            tv_y + screen_margin,
-            tv_width - screen_margin * 2,
-            tv_height - screen_margin * 2,
+        vase_center = (1.6, 1.0, -0.2)
+        self._append_prism_faces(
+            faces,
+            vase_center,
+            (0.3, 0.6, 0.3),
+            (0.75, 0.8, 0.92),
+            (0.8, 0.85, 0.95, 0.9),
+            0.8,
+        )
+        self._append_cone_faces(
+            faces,
+            (vase_center[0], vase_center[1] + 0.4, vase_center[2]),
+            0.25,
+            0.5,
+            6,
+            (0.3, 0.55, 0.35),
+            (0.4, 0.7, 0.45, 0.8),
         )
 
-        gl.glBegin(gl.GL_QUADS)
-        gl.glColor4f(0.02, 0.04, 0.09, 1.0)
-        gl.glVertex2f(screen_rect[0], screen_rect[1])
-        gl.glVertex2f(screen_rect[0] + screen_rect[2], screen_rect[1])
-        gl.glColor4f(0.05, 0.08, 0.14, 1.0)
-        gl.glVertex2f(screen_rect[0] + screen_rect[2], screen_rect[1] + screen_rect[3])
-        gl.glVertex2f(screen_rect[0], screen_rect[1] + screen_rect[3])
-        gl.glEnd()
+        self._render_face_batch(faces, camera, light_dir)
 
+    def _draw_scene2_tv(self, scene_time: float, camera: SceneCamera) -> None:
+        light_dir = self._normalized3((-0.15, -0.7, -0.3))
+        faces: List[
+            Tuple[Sequence[Vec3], Tuple[float, float, float], float, Tuple[float, float, float, float]]
+        ] = []
+        tv_center = (0.7, 1.4, -3.4)
+        tv_size = (3.2, 1.8, 0.5)
+        self._append_prism_faces(
+            faces,
+            tv_center,
+            tv_size,
+            (0.06, 0.06, 0.08),
+            (0.6, 0.65, 0.75, 0.9),
+            0.95,
+        )
+
+        stand_center = (0.7, 0.6, -3.45)
+        self._append_prism_faces(
+            faces,
+            stand_center,
+            (1.2, 0.3, 0.7),
+            (0.04, 0.04, 0.05),
+            (0.5, 0.5, 0.6, 0.8),
+            0.9,
+        )
+
+        screen_width = 2.5
+        screen_height = 1.3
+        screen_z = tv_center[2] + tv_size[2] / 2 + 0.02
+        screen_vertices = [
+            (tv_center[0] - screen_width / 2, tv_center[1] + screen_height / 2, screen_z),
+            (tv_center[0] + screen_width / 2, tv_center[1] + screen_height / 2, screen_z),
+            (tv_center[0] + screen_width / 2, tv_center[1] - screen_height / 2, screen_z),
+            (tv_center[0] - screen_width / 2, tv_center[1] - screen_height / 2, screen_z),
+        ]
+        faces.append((screen_vertices, (0.02, 0.04, 0.09), 1.0, (0.4, 0.55, 0.8, 0.95)))
+
+        self._render_face_batch(faces, camera, light_dir)
+
+        projected_screen = self._project_polygon(screen_vertices, camera)
+        if not projected_screen:
+            return
+        screen_rect = self._polygon_bounding_rect(projected_screen)
         tv_time = min(scene_time, self.SCENE2_TV_FOCUS_DURATION)
         speaker_index, talk_phase = self._scene2_current_speaker(tv_time)
         chatter = math.sin(max(0.0, min(1.0, talk_phase)) * math.pi)
@@ -1165,87 +1190,115 @@ class OpeningSceneCutscene:
         gl.glVertex2f(screen_rect[0], screen_rect[1] + screen_rect[3])
         gl.glEnd()
 
-    def _draw_scene2_window(self, scene_time: float) -> None:
-        width, height = self._viewport_size
-        window_width = width * 0.26
-        window_height = height * 0.38
-        window_x = width * 0.68
-        window_y = height * 0.18
+    def _draw_scene2_window(self, scene_time: float, camera: SceneCamera) -> None:
+        light_dir = self._normalized3((-0.1, -0.5, -0.9))
+        room_depth = 7.2
+        window_center = (3.4, 2.1, -room_depth + 0.1)
+        window_size = (2.8, 3.0)
+        frame_depth = 0.25
+        faces: List[
+            Tuple[Sequence[Vec3], Tuple[float, float, float], float, Tuple[float, float, float, float]]
+        ] = []
 
-        gl.glBegin(gl.GL_QUADS)
-        gl.glColor4f(0.2, 0.16, 0.12, 1.0)
-        gl.glVertex2f(window_x - 10, window_y - 10)
-        gl.glVertex2f(window_x + window_width + 10, window_y - 10)
-        gl.glVertex2f(window_x + window_width + 10, window_y + window_height + 10)
-        gl.glVertex2f(window_x - 10, window_y + window_height + 10)
-        gl.glEnd()
+        vertical_centers = (
+            window_center[0] - window_size[0] / 2 - 0.15,
+            window_center[0] + window_size[0] / 2 + 0.15,
+        )
+        for x_center in vertical_centers:
+            center = (x_center, window_center[1], window_center[2] - frame_depth / 2)
+            self._append_prism_faces(
+                faces,
+                center,
+                (0.3, window_size[1] + 0.4, frame_depth),
+                (0.25, 0.18, 0.12),
+                (0.8, 0.65, 0.5, 0.9),
+                0.95,
+            )
+        horizontal_centers = (
+            window_center[1] + window_size[1] / 2 + 0.15,
+            window_center[1] - window_size[1] / 2 - 0.15,
+        )
+        for y_center in horizontal_centers:
+            center = (window_center[0], y_center, window_center[2] - frame_depth / 2)
+            self._append_prism_faces(
+                faces,
+                center,
+                (window_size[0] + 0.6, 0.3, frame_depth),
+                (0.24, 0.18, 0.14),
+                (0.75, 0.6, 0.45, 0.9),
+                0.95,
+            )
 
-        inner_x = window_x
-        inner_y = window_y
-        inner_w = window_width
-        inner_h = window_height
+        glass_vertices = [
+            (
+                window_center[0] - window_size[0] / 2,
+                window_center[1] + window_size[1] / 2,
+                window_center[2],
+            ),
+            (
+                window_center[0] + window_size[0] / 2,
+                window_center[1] + window_size[1] / 2,
+                window_center[2],
+            ),
+            (
+                window_center[0] + window_size[0] / 2,
+                window_center[1] - window_size[1] / 2,
+                window_center[2],
+            ),
+            (
+                window_center[0] - window_size[0] / 2,
+                window_center[1] - window_size[1] / 2,
+                window_center[2],
+            ),
+        ]
+        faces.append((glass_vertices, (0.05, 0.08, 0.12), 0.8, (0.4, 0.5, 0.7, 0.6)))
 
-        gl.glBegin(gl.GL_QUADS)
-        gl.glColor4f(0.04, 0.07, 0.13, 1.0)
-        gl.glVertex2f(inner_x, inner_y)
-        gl.glVertex2f(inner_x + inner_w, inner_y)
-        gl.glColor4f(0.01, 0.02, 0.05, 1.0)
-        gl.glVertex2f(inner_x + inner_w, inner_y + inner_h)
-        gl.glVertex2f(inner_x, inner_y + inner_h)
-        gl.glEnd()
+        self._render_face_batch(faces, camera, light_dir)
 
-        gl.glBegin(gl.GL_QUADS)
-        gl.glColor4f(0.0, 0.0, 0.0, 0.5)
-        gl.glVertex2f(inner_x, inner_y + inner_h * 0.7)
-        gl.glVertex2f(inner_x + inner_w, inner_y + inner_h * 0.7)
-        gl.glVertex2f(inner_x + inner_w, inner_y + inner_h)
-        gl.glVertex2f(inner_x, inner_y + inner_h)
-        gl.glEnd()
+        mullion_top = (window_center[0], window_center[1] + window_size[1] / 2, window_center[2] + 0.01)
+        mullion_bottom = (window_center[0], window_center[1] - window_size[1] / 2, window_center[2] + 0.01)
+        mullion_left = (window_center[0] - window_size[0] / 2, window_center[1], window_center[2] + 0.01)
+        mullion_right = (window_center[0] + window_size[0] / 2, window_center[1], window_center[2] + 0.01)
+        mullion_color = (0.7, 0.6, 0.45, 0.9)
+        self._draw_projected_line(mullion_top, mullion_bottom, camera, mullion_color)
+        self._draw_projected_line(mullion_left, mullion_right, camera, mullion_color)
 
-        gl.glBegin(gl.GL_LINES)
-        gl.glColor4f(0.28, 0.22, 0.18, 1.0)
-        gl.glVertex2f(inner_x + inner_w / 2, inner_y)
-        gl.glVertex2f(inner_x + inner_w / 2, inner_y + inner_h)
-        gl.glVertex2f(inner_x, inner_y + inner_h / 2)
-        gl.glVertex2f(inner_x + inner_w, inner_y + inner_h / 2)
-        gl.glEnd()
-
+        glass_polygon = self._project_polygon(glass_vertices, camera)
         meteor_time = scene_time - (self.SCENE2_TV_FOCUS_DURATION + self.SCENE2_PAN_DELAY)
         if meteor_time > 0.0:
             flight_duration = self.SCENE2_WINDOW_PAN_DURATION * 0.85
-            flight_progress = self._clamp01(
-                meteor_time / max(0.001, flight_duration)
+            flight_progress = self._clamp01(meteor_time / max(0.001, flight_duration))
+            meteor_pos = (
+                window_center[0] + window_size[0] * (0.45 - 0.9 * flight_progress),
+                window_center[1] + window_size[1] * (0.15 + 0.7 * flight_progress),
+                window_center[2] - 0.02,
             )
-            meteor_x = inner_x + inner_w * (0.95 - 0.8 * flight_progress)
-            meteor_y = inner_y + inner_h * (0.05 + 0.85 * flight_progress)
-            tail_dx = -inner_w * 0.15
-            tail_dy = -inner_h * 0.08
-            gl.glBegin(gl.GL_LINES)
-            gl.glColor4f(1.0, 0.72, 0.25, 0.9)
-            gl.glVertex2f(meteor_x, meteor_y)
-            gl.glVertex2f(meteor_x - tail_dx, meteor_y - tail_dy)
-            gl.glEnd()
-
-            gl.glBegin(gl.GL_TRIANGLE_FAN)
-            gl.glColor4f(1.0, 0.8, 0.3, 0.8)
-            gl.glVertex2f(meteor_x, meteor_y)
-            for angle in range(0, 361, 45):
-                rad = math.radians(angle)
-                gl.glVertex2f(
-                    meteor_x + math.cos(rad) * width * 0.01,
-                    meteor_y + math.sin(rad) * width * 0.01,
-                )
-            gl.glEnd()
+            tail_pos = (
+                meteor_pos[0] + window_size[0] * 0.2,
+                meteor_pos[1] - window_size[1] * 0.18,
+                meteor_pos[2] - 0.2,
+            )
+            self._draw_projected_line(tail_pos, meteor_pos, camera, (1.0, 0.72, 0.25, 0.9))
+            meteor_projected = self._project_point(meteor_pos, camera)
+            if meteor_projected is not None:
+                glow_radius = self._viewport_size[0] * 0.012
+                gl.glBegin(gl.GL_TRIANGLE_FAN)
+                gl.glColor4f(1.0, 0.8, 0.3, 0.85)
+                gl.glVertex2f(meteor_projected[0], meteor_projected[1])
+                for angle in range(0, 361, 40):
+                    rad = math.radians(angle)
+                    gl.glVertex2f(
+                        meteor_projected[0] + math.cos(rad) * glow_radius,
+                        meteor_projected[1] + math.sin(rad) * glow_radius,
+                    )
+                gl.glEnd()
 
         flash_intensity = self._scene2_flash_strength(scene_time)
-        if flash_intensity > 0.0:
-            gl.glBegin(gl.GL_QUADS)
-            gl.glColor4f(1.0, 0.55, 0.12, 0.4 + 0.5 * flash_intensity)
-            gl.glVertex2f(inner_x, inner_y)
-            gl.glVertex2f(inner_x + inner_w, inner_y)
-            gl.glColor4f(1.0, 0.65, 0.2, 0.6 * flash_intensity)
-            gl.glVertex2f(inner_x + inner_w, inner_y + inner_h)
-            gl.glVertex2f(inner_x, inner_y + inner_h)
+        if flash_intensity > 0.0 and glass_polygon:
+            gl.glBegin(gl.GL_POLYGON)
+            gl.glColor4f(1.0, 0.55, 0.12, 0.35 + 0.4 * flash_intensity)
+            for x, y in glass_polygon:
+                gl.glVertex2f(x, y)
             gl.glEnd()
 
     def _draw_scene2_portrait_reporter(self, rect: Tuple[float, float, float, float], chatter: float) -> None:
@@ -1416,6 +1469,26 @@ class OpeningSceneCutscene:
 
     # ------------------------------------------------------------------
     # Utilities
+    def _scene1_camera(self) -> SceneCamera:
+        zoom = self._scene1_zoom_progress()
+        distance = 9.2 - zoom * 3.2
+        horizontal = math.sin(self._elapsed * 0.35 + self._camera_jitter_phase) * 0.4
+        vertical = 2.4 - zoom * 0.4
+        target = (0.0, 1.3, 0.0)
+        return SceneCamera(position=(horizontal, vertical, distance), target=target, fov=math.radians(55.0))
+
+    def _scene2_camera(self, scene_time: float) -> SceneCamera:
+        zoom = self._scene2_zoom_progress(scene_time)
+        pan = self._scene2_pan_progress(scene_time)
+        base_pos = (-2.0, 2.1, 8.2)
+        position = (
+            base_pos[0] + pan * 2.0,
+            base_pos[1] + math.sin(self._elapsed * 0.3) * 0.05,
+            base_pos[2] - zoom * 2.0,
+        )
+        target = (0.5 + pan * 0.6, 1.3, -2.5)
+        return SceneCamera(position=position, target=target, fov=math.radians(50.0))
+
     def _scene1_zoom_progress(self) -> float:
         t = self._elapsed - (
             self.SCENE1_FADE_IN_DURATION + self.SCENE1_LINGER_DURATION
@@ -1503,6 +1576,220 @@ class OpeningSceneCutscene:
         if value >= 1.0:
             return 1.0
         return value
+
+    # ------------------------------------------------------------------
+    # 3D helpers
+    def _project_point(self, point: Vec3, camera: SceneCamera) -> Optional[Tuple[float, float, float]]:
+        width, height = self._viewport_size
+        aspect = width / max(1.0, float(height))
+        forward = self._normalized3(
+            (
+                camera.target[0] - camera.position[0],
+                camera.target[1] - camera.position[1],
+                camera.target[2] - camera.position[2],
+            )
+        )
+        up_hint = (0.0, 1.0, 0.0)
+        if abs(self._dot3(forward, up_hint)) > 0.96:
+            up_hint = (0.0, 0.0, 1.0)
+        right = self._normalized3(self._cross3(forward, up_hint))
+        up = self._cross3(right, forward)
+        relative = (
+            point[0] - camera.position[0],
+            point[1] - camera.position[1],
+            point[2] - camera.position[2],
+        )
+        view_x = self._dot3(relative, right)
+        view_y = self._dot3(relative, up)
+        view_z = self._dot3(relative, forward)
+        near = 0.1
+        if view_z <= near:
+            return None
+        f = 1.0 / math.tan(max(0.1, camera.fov * 0.5))
+        ndc_x = (view_x * f) / (view_z * aspect)
+        ndc_y = (view_y * f) / view_z
+        screen_x = width * (0.5 + ndc_x * 0.5)
+        screen_y = height * (0.5 - ndc_y * 0.5)
+        return screen_x, screen_y, view_z
+
+    def _render_face_batch(
+        self,
+        faces: Sequence[Tuple[Sequence[Vec3], Tuple[float, float, float], float, Tuple[float, float, float, float]]],
+        camera: SceneCamera,
+        light_dir: Vec3,
+    ) -> None:
+        queue: List[Tuple[float, List[Vec2], Vec3, Tuple[float, float, float], float, Tuple[float, float, float, float]]] = []
+        for vertices, base_color, alpha, wire_color in faces:
+            projected: List[Vec2] = []
+            depths: List[float] = []
+            skip = False
+            for vertex in vertices:
+                result = self._project_point(vertex, camera)
+                if result is None:
+                    skip = True
+                    break
+                projected.append((result[0], result[1]))
+                depths.append(result[2])
+            if skip:
+                continue
+            normal = self._face_normal(vertices)
+            queue.append((sum(depths) / len(depths), projected, normal, base_color, alpha, wire_color))
+
+        queue.sort(key=lambda entry: entry[0], reverse=True)
+        for _, projected, normal, base_color, alpha, wire_color in queue:
+            intensity = max(0.2, self._dot3(normal, light_dir) * 0.6 + 0.4)
+            color = (
+                self._clamp01(base_color[0] * intensity),
+                self._clamp01(base_color[1] * intensity),
+                self._clamp01(base_color[2] * intensity),
+            )
+            gl.glColor4f(color[0], color[1], color[2], alpha)
+            gl.glBegin(gl.GL_TRIANGLE_FAN)
+            for x, y in projected:
+                gl.glVertex2f(x, y)
+            gl.glEnd()
+
+            gl.glColor4f(
+                wire_color[0],
+                wire_color[1],
+                wire_color[2],
+                wire_color[3] * alpha,
+            )
+            gl.glBegin(gl.GL_LINE_LOOP)
+            for x, y in projected:
+                gl.glVertex2f(x, y)
+            gl.glEnd()
+
+    def _append_prism_faces(
+        self,
+        face_store: List[Tuple[Sequence[Vec3], Tuple[float, float, float], float, Tuple[float, float, float, float]]],
+        center: Vec3,
+        size: Vec3,
+        base_color: Tuple[float, float, float],
+        wire_color: Tuple[float, float, float, float],
+        alpha: float,
+    ) -> None:
+        hx, hy, hz = size[0] / 2, size[1] / 2, size[2] / 2
+        vertices = [
+            (center[0] - hx, center[1] - hy, center[2] - hz),
+            (center[0] + hx, center[1] - hy, center[2] - hz),
+            (center[0] + hx, center[1] + hy, center[2] - hz),
+            (center[0] - hx, center[1] + hy, center[2] - hz),
+            (center[0] - hx, center[1] - hy, center[2] + hz),
+            (center[0] + hx, center[1] - hy, center[2] + hz),
+            (center[0] + hx, center[1] + hy, center[2] + hz),
+            (center[0] - hx, center[1] + hy, center[2] + hz),
+        ]
+        indices = (
+            (7, 6, 5, 4),  # front
+            (3, 2, 1, 0),  # back
+            (3, 7, 4, 0),  # left
+            (2, 6, 5, 1),  # right
+            (3, 2, 6, 7),  # top
+            (0, 1, 5, 4),  # bottom
+        )
+        for face_indices in indices:
+            face_store.append(
+                ([vertices[i] for i in face_indices], base_color, alpha, wire_color)
+            )
+
+    def _append_cone_faces(
+        self,
+        face_store: List[Tuple[Sequence[Vec3], Tuple[float, float, float], float, Tuple[float, float, float, float]]],
+        center: Vec3,
+        radius: float,
+        height: float,
+        segments: int,
+        base_color: Tuple[float, float, float],
+        wire_color: Tuple[float, float, float, float],
+    ) -> None:
+        base_y = center[1]
+        apex = (center[0], center[1] + height, center[2])
+        ring: List[Vec3] = []
+        for index in range(segments):
+            angle = (index / segments) * math.tau
+            ring.append(
+                (
+                    center[0] + math.cos(angle) * radius,
+                    base_y,
+                    center[2] + math.sin(angle) * radius,
+                )
+            )
+        for i in range(segments):
+            v0 = ring[i]
+            v1 = ring[(i + 1) % segments]
+            face_store.append(([v0, v1, apex], base_color, 0.9, wire_color))
+        face_store.append((ring, tuple(value * 0.85 for value in base_color), 0.7, wire_color))
+
+    def _project_polygon(self, vertices: Sequence[Vec3], camera: SceneCamera) -> Optional[List[Vec2]]:
+        projected: List[Vec2] = []
+        for vertex in vertices:
+            result = self._project_point(vertex, camera)
+            if result is None:
+                return None
+            projected.append((result[0], result[1]))
+        return projected
+
+    @staticmethod
+    def _polygon_bounding_rect(points: Sequence[Vec2]) -> Tuple[float, float, float, float]:
+        min_x = min(point[0] for point in points)
+        max_x = max(point[0] for point in points)
+        min_y = min(point[1] for point in points)
+        max_y = max(point[1] for point in points)
+        return (min_x, min_y, max_x - min_x, max_y - min_y)
+
+    def _draw_projected_line(
+        self,
+        start: Vec3,
+        end: Vec3,
+        camera: SceneCamera,
+        color: Tuple[float, float, float, float],
+    ) -> None:
+        start_proj = self._project_point(start, camera)
+        end_proj = self._project_point(end, camera)
+        if start_proj is None or end_proj is None:
+            return
+        gl.glColor4f(*color)
+        gl.glBegin(gl.GL_LINES)
+        gl.glVertex2f(start_proj[0], start_proj[1])
+        gl.glVertex2f(end_proj[0], end_proj[1])
+        gl.glEnd()
+
+    @staticmethod
+    def _face_normal(vertices: Sequence[Vec3]) -> Vec3:
+        if len(vertices) < 3:
+            return (0.0, 0.0, 1.0)
+        edge1 = (
+            vertices[1][0] - vertices[0][0],
+            vertices[1][1] - vertices[0][1],
+            vertices[1][2] - vertices[0][2],
+        )
+        edge2 = (
+            vertices[2][0] - vertices[0][0],
+            vertices[2][1] - vertices[0][1],
+            vertices[2][2] - vertices[0][2],
+        )
+        normal = OpeningSceneCutscene._cross3(edge1, edge2)
+        return OpeningSceneCutscene._normalized3(normal)
+
+    @staticmethod
+    def _dot3(a: Vec3, b: Vec3) -> float:
+        return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+    @staticmethod
+    def _cross3(a: Vec3, b: Vec3) -> Vec3:
+        return (
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        )
+
+    @staticmethod
+    def _normalized3(vec: Vec3) -> Vec3:
+        length = math.sqrt(vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2])
+        if length <= 0.0:
+            return (0.0, 0.0, 1.0)
+        return (vec[0] / length, vec[1] / length, vec[2] / length)
 
 
 Cutscene = OpeningSceneCutscene
