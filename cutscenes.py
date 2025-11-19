@@ -874,6 +874,16 @@ class OpeningSceneCutscene:
             )
         return trees
 
+    @staticmethod
+    def _clamp01(value: float) -> float:
+        """Clamp a floating point value to the inclusive range [0, 1]."""
+
+        if value <= 0.0:
+            return 0.0
+        if value >= 1.0:
+            return 1.0
+        return value
+
 
 Cutscene = OpeningSceneCutscene
 """Alias used by external callers when referencing the default cutscene."""
