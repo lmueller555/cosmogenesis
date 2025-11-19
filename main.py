@@ -5,6 +5,7 @@ import math
 
 import pygame
 
+from cutscenes import Cutscene
 from game.camera import Camera3D
 from game.selection import (
     SelectionDragState,
@@ -109,6 +110,7 @@ def run() -> None:
     ui_renderer = UIPanelRenderer()
     pause_menu = PauseMenu(window_size)
     title_screen = TitleScreen(window_size)
+    cutscene = Cutscene(window_size)
 
     world: World | None = None
     camera: Camera3D | None = None
@@ -149,6 +151,7 @@ def run() -> None:
                 window_size = event.size
                 pause_menu.update_layout(window_size)
                 title_screen.update_layout(window_size)
+                cutscene.update_viewport(window_size)
                 if layout is not None and camera is not None:
                     layout.update(window_size)
                     camera.update_viewport(layout.gameplay_rect.size)
@@ -159,13 +162,22 @@ def run() -> None:
                     if action == "start":
                         begin_game_session()
                     elif action == "campaign":
-                        begin_game_session(
-                            "Campaign mode is not implemented yet. Starting free play session instead."
-                        )
+                        cutscene.reset()
+                        mode = "cutscene"
                     elif action == "exit":
                         running = False
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     running = False
+                continue
+            if mode == "cutscene":
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        mode = "title"
+                    elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                        begin_game_session()
+                    continue
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    begin_game_session()
                 continue
 
             assert world is not None
@@ -324,6 +336,10 @@ def run() -> None:
                         elif not additive:
                             clear_selection(world)
 
+        if mode == "cutscene":
+            cutscene.update(dt)
+            if cutscene.is_finished():
+                begin_game_session()
         if mode == "game" and world is not None and camera is not None and layout is not None:
             if not paused:
                 handle_camera_input(camera, dt)
@@ -339,6 +355,8 @@ def run() -> None:
             ui_renderer.draw(world, camera, layout)
             if paused:
                 pause_menu.draw()
+        elif mode == "cutscene":
+            cutscene.draw()
         else:
             title_screen.draw()
         pygame.display.flip()
