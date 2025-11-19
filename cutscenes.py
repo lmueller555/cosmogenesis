@@ -640,6 +640,12 @@ class OpeningSceneCutscene:
 
     SCENE_LABEL = "opening_scene"
 
+    # Scene two reuses the same living-room dimensions as the campaign
+    # opening so all furniture placement math stays in sync.
+    SCENE2_ROOM_WIDTH = 11.0
+    SCENE2_ROOM_DEPTH = 7.2
+    SCENE2_ROOM_HEIGHT = 4.2
+
     SCENE1_FADE_IN_DURATION = 2.5
     SCENE1_LINGER_DURATION = 4.0
     SCENE1_ZOOM_DURATION = 6.0
