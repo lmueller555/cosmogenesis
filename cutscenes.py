@@ -622,14 +622,38 @@ class ForestTree:
 
 
 class OpeningSceneCutscene:
-    """Opening scene: fade into a 3D forest clearing with a glowing house."""
+    """Opening scene featuring two sequential vignettes."""
 
     SCENE_LABEL = "opening_scene"
 
-    FADE_IN_DURATION = 2.5
-    LINGER_DURATION = 4.0
-    ZOOM_DURATION = 6.0
-    TOTAL_DURATION = FADE_IN_DURATION + LINGER_DURATION + ZOOM_DURATION + 2.0
+    SCENE1_FADE_IN_DURATION = 2.5
+    SCENE1_LINGER_DURATION = 4.0
+    SCENE1_ZOOM_DURATION = 6.0
+    SCENE1_OUTRO_DURATION = 2.0
+    SCENE1_TOTAL_DURATION = (
+        SCENE1_FADE_IN_DURATION
+        + SCENE1_LINGER_DURATION
+        + SCENE1_ZOOM_DURATION
+        + SCENE1_OUTRO_DURATION
+    )
+
+    SCENE2_FADE_IN_DURATION = 1.0
+    SCENE2_INTERVIEW_SWITCHES = 5
+    SCENE2_SWITCH_INTERVAL = 1.5
+    SCENE2_TV_FOCUS_DURATION = SCENE2_SWITCH_INTERVAL * (SCENE2_INTERVIEW_SWITCHES + 1) + 1.0
+    SCENE2_PAN_DELAY = 0.6
+    SCENE2_WINDOW_PAN_DURATION = 3.0
+    SCENE2_FLASH_DURATION = 1.8
+    SCENE2_OUTRO_DURATION = 1.4
+    SCENE2_TOTAL_DURATION = (
+        SCENE2_TV_FOCUS_DURATION
+        + SCENE2_PAN_DELAY
+        + SCENE2_WINDOW_PAN_DURATION
+        + SCENE2_FLASH_DURATION
+        + SCENE2_OUTRO_DURATION
+    )
+
+    TOTAL_DURATION = SCENE1_TOTAL_DURATION + SCENE2_TOTAL_DURATION
 
     def __init__(self, viewport_size: Tuple[int, int]) -> None:
         pygame.font.init()
@@ -642,6 +666,8 @@ class OpeningSceneCutscene:
             random.random() * math.tau,
             random.random() * math.tau,
         )
+        self._scene2_tv_scan_phase = random.random() * math.tau
+        self._scene2_lamp_phase = random.random() * math.tau
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -664,7 +690,22 @@ class OpeningSceneCutscene:
         gl.glEnable(gl.GL_BLEND)
         gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
 
-        camera_scale = 1.0 + 0.35 * self._zoom_progress()
+        if self._elapsed < self.SCENE1_TOTAL_DURATION:
+            self._draw_scene1()
+            self._draw_scene1_fade_overlay()
+        else:
+            scene2_time = min(
+                self._elapsed - self.SCENE1_TOTAL_DURATION, self.SCENE2_TOTAL_DURATION
+            )
+            self._draw_scene2(scene2_time)
+            self._draw_scene2_fade_overlay(scene2_time)
+
+        gl.glDisable(gl.GL_BLEND)
+        gl.glEnable(gl.GL_DEPTH_TEST)
+
+    def _draw_scene1(self) -> None:
+        width, height = self._viewport_size
+        camera_scale = 1.0 + 0.35 * self._scene1_zoom_progress()
         camera_offset = math.sin(self._elapsed * 0.4 + self._camera_jitter_phase) * 3.0
 
         gl.glPushMatrix()
@@ -672,17 +713,29 @@ class OpeningSceneCutscene:
         gl.glScalef(camera_scale, camera_scale, 1.0)
         gl.glTranslatef(-width / 2, -height / 2, 0.0)
 
-        self._draw_background()
-        self._draw_forest_floor()
-        self._draw_trees()
-        self._draw_house()
+        self._draw_scene1_background()
+        self._draw_scene1_forest_floor()
+        self._draw_scene1_trees()
+        self._draw_scene1_house()
 
         gl.glPopMatrix()
 
-        self._draw_fade_overlay()
+    def _draw_scene2(self, scene_time: float) -> None:
+        width, height = self._viewport_size
+        zoom = 1.0 + 0.18 * self._scene2_zoom_progress(scene_time)
+        pan_amount = self._scene2_pan_progress(scene_time) * width * 0.28
 
-        gl.glDisable(gl.GL_BLEND)
-        gl.glEnable(gl.GL_DEPTH_TEST)
+        gl.glPushMatrix()
+        gl.glTranslatef(width / 2 + pan_amount, height / 2, 0.0)
+        gl.glScalef(zoom, zoom, 1.0)
+        gl.glTranslatef(-width / 2, -height / 2, 0.0)
+
+        self._draw_scene2_room_base(scene_time)
+        self._draw_scene2_furniture(scene_time)
+        self._draw_scene2_tv(scene_time)
+        self._draw_scene2_window(scene_time)
+
+        gl.glPopMatrix()
 
     def update_viewport(self, viewport_size: Tuple[int, int]) -> None:
         self._viewport_size = viewport_size
@@ -691,8 +744,8 @@ class OpeningSceneCutscene:
         return self._elapsed >= self.TOTAL_DURATION
 
     # ------------------------------------------------------------------
-    # Scene helpers
-    def _draw_background(self) -> None:
+    # Scene 1 helpers
+    def _draw_scene1_background(self) -> None:
         width, height = self._viewport_size
         gl.glBegin(gl.GL_QUADS)
         gl.glColor4f(0.01, 0.01, 0.08, 1.0)
@@ -712,7 +765,7 @@ class OpeningSceneCutscene:
             gl.glVertex2f(star.position[0] * width, star.position[1] * height * 0.55)
         gl.glEnd()
 
-    def _draw_forest_floor(self) -> None:
+    def _draw_scene1_forest_floor(self) -> None:
         width, height = self._viewport_size
         horizon = height * 0.55
         gl.glBegin(gl.GL_QUADS)
@@ -733,7 +786,7 @@ class OpeningSceneCutscene:
         gl.glVertex2f(0.0, horizon + 80)
         gl.glEnd()
 
-    def _draw_trees(self) -> None:
+    def _draw_scene1_trees(self) -> None:
         width, height = self._viewport_size
         horizon = height * 0.55
         for tree in sorted(self._trees, key=lambda t: t.position[1]):
@@ -767,7 +820,7 @@ class OpeningSceneCutscene:
                 gl.glVertex2f(base_x + crown_width * width_factor, layer_height + tree_height * 0.1)
                 gl.glEnd()
 
-    def _draw_house(self) -> None:
+    def _draw_scene1_house(self) -> None:
         width, height = self._viewport_size
         horizon = height * 0.55
         base_x = width / 2
@@ -823,9 +876,533 @@ class OpeningSceneCutscene:
         gl.glVertex2f(base_x - window_width * 0.75, base_y - house_height * 0.55)
         gl.glEnd()
 
-    def _draw_fade_overlay(self) -> None:
-        progress = min(1.0, self._elapsed / self.FADE_IN_DURATION)
-        fade_amount = 1.0 - progress
+    def _draw_scene1_fade_overlay(self) -> None:
+        scene_time = min(self._elapsed, self.SCENE1_TOTAL_DURATION)
+        fade_in = 1.0 - min(1.0, scene_time / self.SCENE1_FADE_IN_DURATION)
+        outro_start = self.SCENE1_TOTAL_DURATION - self.SCENE1_OUTRO_DURATION
+        fade_out = 0.0
+        if scene_time > outro_start:
+            fade_out = min(
+                1.0,
+                (scene_time - outro_start)
+                / max(0.001, self.SCENE1_OUTRO_DURATION),
+            )
+        fade_amount = max(fade_in, fade_out)
+        if fade_amount <= 0.0:
+            return
+        width, height = self._viewport_size
+        gl.glColor4f(0.0, 0.0, 0.0, fade_amount)
+        gl.glBegin(gl.GL_QUADS)
+        gl.glVertex2f(0.0, 0.0)
+        gl.glVertex2f(width, 0.0)
+        gl.glVertex2f(width, height)
+        gl.glVertex2f(0.0, height)
+        gl.glEnd()
+
+    # ------------------------------------------------------------------
+    # Scene 2 helpers
+    def _draw_scene2_room_base(self, scene_time: float) -> None:
+        width, height = self._viewport_size
+        floor_y = height * 0.66
+        lamp_intensity = 0.35 + 0.25 * math.sin(scene_time * 2.0 + self._scene2_lamp_phase)
+        lamp_intensity = self._clamp01(lamp_intensity)
+
+        top_color = (
+            0.07 + lamp_intensity * 0.15,
+            0.08 + lamp_intensity * 0.12,
+            0.15 + lamp_intensity * 0.2,
+            1.0,
+        )
+        bottom_color = (
+            0.02 + lamp_intensity * 0.08,
+            0.02 + lamp_intensity * 0.06,
+            0.05 + lamp_intensity * 0.12,
+            1.0,
+        )
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(*top_color)
+        gl.glVertex2f(0.0, 0.0)
+        gl.glVertex2f(width, 0.0)
+        gl.glColor4f(*bottom_color)
+        gl.glVertex2f(width, floor_y)
+        gl.glVertex2f(0.0, floor_y)
+        gl.glEnd()
+
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.12, 0.09, 0.07, 1.0)
+        gl.glVertex2f(0.0, floor_y)
+        gl.glVertex2f(width, floor_y)
+        gl.glColor4f(0.06, 0.04, 0.03, 1.0)
+        gl.glVertex2f(width, height)
+        gl.glVertex2f(0.0, height)
+        gl.glEnd()
+
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.1, 0.08, 0.06, 1.0)
+        gl.glVertex2f(0.0, floor_y - 6)
+        gl.glVertex2f(width, floor_y - 6)
+        gl.glVertex2f(width, floor_y)
+        gl.glVertex2f(0.0, floor_y)
+        gl.glEnd()
+
+        plank_count = 18
+        gl.glBegin(gl.GL_LINES)
+        gl.glColor4f(0.08, 0.05, 0.03, 0.35)
+        for index in range(plank_count + 1):
+            x = width * (index / plank_count)
+            gl.glVertex2f(x, floor_y)
+            gl.glVertex2f(x, height)
+        gl.glEnd()
+
+        rug_radius_x = width * 0.22
+        rug_radius_y = height * 0.08
+        rug_center_x = width * 0.45
+        rug_center_y = floor_y + height * 0.16
+        gl.glBegin(gl.GL_TRIANGLE_FAN)
+        gl.glColor4f(0.08, 0.05, 0.12, 0.8)
+        gl.glVertex2f(rug_center_x, rug_center_y)
+        for angle in range(0, 361, 10):
+            rad = math.radians(angle)
+            gl.glColor4f(0.14, 0.09, 0.24, 0.6)
+            gl.glVertex2f(
+                rug_center_x + math.cos(rad) * rug_radius_x,
+                rug_center_y + math.sin(rad) * rug_radius_y,
+            )
+        gl.glEnd()
+
+        frame_top = floor_y * 0.45
+        frame_height = floor_y * 0.22
+        for i in range(3):
+            frame_width = width * 0.11
+            gap = width * 0.02
+            x = width * 0.08 + i * (frame_width + gap)
+            gl.glBegin(gl.GL_QUADS)
+            gl.glColor4f(0.25, 0.2, 0.15, 1.0)
+            gl.glVertex2f(x, frame_top)
+            gl.glVertex2f(x + frame_width, frame_top)
+            gl.glVertex2f(x + frame_width, frame_top + frame_height)
+            gl.glVertex2f(x, frame_top + frame_height)
+            gl.glEnd()
+
+            gl.glBegin(gl.GL_QUADS)
+            gl.glColor4f(0.12 + 0.02 * i, 0.14, 0.18 + 0.02 * i, 0.6)
+            gl.glVertex2f(x + 8, frame_top + 8)
+            gl.glVertex2f(x + frame_width - 8, frame_top + 8)
+            gl.glVertex2f(x + frame_width - 8, frame_top + frame_height - 8)
+            gl.glVertex2f(x + 8, frame_top + frame_height - 8)
+            gl.glEnd()
+
+    def _draw_scene2_furniture(self, scene_time: float) -> None:
+        width, height = self._viewport_size
+        floor_y = height * 0.66
+
+        sofa_width = width * 0.4
+        sofa_height = height * 0.14
+        sofa_x = width * 0.12
+        sofa_y = floor_y - sofa_height * 0.4
+
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.18, 0.22, 0.32, 1.0)
+        gl.glVertex2f(sofa_x, sofa_y)
+        gl.glVertex2f(sofa_x + sofa_width, sofa_y)
+        gl.glVertex2f(sofa_x + sofa_width, sofa_y + sofa_height)
+        gl.glVertex2f(sofa_x, sofa_y + sofa_height)
+        gl.glEnd()
+
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.14, 0.17, 0.25, 1.0)
+        gl.glVertex2f(sofa_x, sofa_y - sofa_height * 0.4)
+        gl.glVertex2f(sofa_x + sofa_width, sofa_y - sofa_height * 0.4)
+        gl.glVertex2f(sofa_x + sofa_width, sofa_y)
+        gl.glVertex2f(sofa_x, sofa_y)
+        gl.glEnd()
+
+        cushion_colors = (
+            (0.95, 0.75, 0.35),
+            (0.6, 0.75, 0.9),
+        )
+        for index, color in enumerate(cushion_colors):
+            offset = sofa_width * 0.2 * index
+            gl.glBegin(gl.GL_QUADS)
+            gl.glColor4f(color[0], color[1], color[2], 1.0)
+            gl.glVertex2f(sofa_x + sofa_width * 0.15 + offset, sofa_y - sofa_height * 0.25)
+            gl.glVertex2f(
+                sofa_x + sofa_width * 0.28 + offset,
+                sofa_y - sofa_height * 0.25,
+            )
+            gl.glVertex2f(
+                sofa_x + sofa_width * 0.28 + offset,
+                sofa_y - sofa_height * 0.05,
+            )
+            gl.glVertex2f(sofa_x + sofa_width * 0.15 + offset, sofa_y - sofa_height * 0.05)
+            gl.glEnd()
+
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.22, 0.15, 0.08, 1.0)
+        table_width = width * 0.22
+        table_height = height * 0.02
+        table_x = width * 0.42
+        table_y = floor_y + height * 0.08
+        gl.glVertex2f(table_x, table_y)
+        gl.glVertex2f(table_x + table_width, table_y)
+        gl.glVertex2f(table_x + table_width, table_y + table_height)
+        gl.glVertex2f(table_x, table_y + table_height)
+        gl.glEnd()
+
+        leg_width = table_width * 0.05
+        gl.glBegin(gl.GL_QUADS)
+        for offset in (0.08, 0.92):
+            x = table_x + table_width * offset - leg_width / 2
+            gl.glColor4f(0.12, 0.08, 0.05, 1.0)
+            gl.glVertex2f(x, table_y + table_height)
+            gl.glVertex2f(x + leg_width, table_y + table_height)
+            gl.glVertex2f(x + leg_width, table_y + table_height + height * 0.08)
+            gl.glVertex2f(x, table_y + table_height + height * 0.08)
+        gl.glEnd()
+
+        vase_center_x = table_x + table_width * 0.5
+        vase_center_y = table_y - height * 0.01
+        gl.glBegin(gl.GL_TRIANGLE_FAN)
+        gl.glColor4f(0.74, 0.76, 0.9, 0.9)
+        gl.glVertex2f(vase_center_x, vase_center_y)
+        for angle in range(0, 361, 20):
+            rad = math.radians(angle)
+            gl.glVertex2f(
+                vase_center_x + math.cos(rad) * width * 0.02,
+                vase_center_y - height * 0.04 + math.sin(rad) * height * 0.02,
+            )
+        gl.glEnd()
+
+        stem_top = vase_center_y - height * 0.12
+        gl.glBegin(gl.GL_LINES)
+        gl.glColor4f(0.3, 0.55, 0.3, 1.0)
+        gl.glVertex2f(vase_center_x, vase_center_y - height * 0.02)
+        gl.glVertex2f(vase_center_x - width * 0.01, stem_top)
+        gl.glVertex2f(vase_center_x, vase_center_y - height * 0.02)
+        gl.glVertex2f(vase_center_x + width * 0.008, stem_top * 0.99)
+        gl.glEnd()
+
+        gl.glBegin(gl.GL_TRIANGLE_FAN)
+        gl.glColor4f(0.95, 0.6, 0.2, 0.9)
+        gl.glVertex2f(vase_center_x - width * 0.008, stem_top)
+        for angle in range(0, 361, 30):
+            rad = math.radians(angle)
+            gl.glVertex2f(
+                vase_center_x - width * 0.008 + math.cos(rad) * width * 0.02,
+                stem_top + math.sin(rad) * width * 0.02,
+            )
+        gl.glEnd()
+
+    def _draw_scene2_tv(self, scene_time: float) -> None:
+        width, height = self._viewport_size
+        tv_width = width * 0.34
+        tv_height = height * 0.26
+        tv_center_x = width * 0.42
+        tv_x = tv_center_x - tv_width / 2
+        tv_y = height * 0.2
+
+        panel_padding = width * 0.015
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.05, 0.05, 0.07, 0.85)
+        gl.glVertex2f(tv_x - panel_padding, tv_y - panel_padding)
+        gl.glVertex2f(tv_x + tv_width + panel_padding, tv_y - panel_padding)
+        gl.glVertex2f(tv_x + tv_width + panel_padding, tv_y + tv_height + panel_padding)
+        gl.glVertex2f(tv_x - panel_padding, tv_y + tv_height + panel_padding)
+        gl.glEnd()
+
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.08, 0.08, 0.1, 1.0)
+        gl.glVertex2f(tv_x, tv_y)
+        gl.glVertex2f(tv_x + tv_width, tv_y)
+        gl.glVertex2f(tv_x + tv_width, tv_y + tv_height)
+        gl.glVertex2f(tv_x, tv_y + tv_height)
+        gl.glEnd()
+
+        screen_margin = width * 0.01
+        screen_rect = (
+            tv_x + screen_margin,
+            tv_y + screen_margin,
+            tv_width - screen_margin * 2,
+            tv_height - screen_margin * 2,
+        )
+
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.02, 0.04, 0.09, 1.0)
+        gl.glVertex2f(screen_rect[0], screen_rect[1])
+        gl.glVertex2f(screen_rect[0] + screen_rect[2], screen_rect[1])
+        gl.glColor4f(0.05, 0.08, 0.14, 1.0)
+        gl.glVertex2f(screen_rect[0] + screen_rect[2], screen_rect[1] + screen_rect[3])
+        gl.glVertex2f(screen_rect[0], screen_rect[1] + screen_rect[3])
+        gl.glEnd()
+
+        tv_time = min(scene_time, self.SCENE2_TV_FOCUS_DURATION)
+        speaker_index, talk_phase = self._scene2_current_speaker(tv_time)
+        chatter = math.sin(max(0.0, min(1.0, talk_phase)) * math.pi)
+        chatter *= 0.7 + 0.3 * math.sin(self._elapsed * 8.0 + self._scene2_tv_scan_phase)
+        chatter = self._clamp01(chatter)
+
+        if speaker_index == 0:
+            self._draw_scene2_portrait_reporter(screen_rect, chatter)
+        else:
+            self._draw_scene2_portrait_host(screen_rect, chatter)
+
+        scanlines = 18
+        gl.glBegin(gl.GL_LINES)
+        for i in range(scanlines):
+            y = screen_rect[1] + (i / scanlines) * screen_rect[3]
+            alpha = 0.08 + 0.05 * math.sin(self._elapsed * 12.0 + i * 0.5)
+            gl.glColor4f(0.9, 0.9, 1.0, alpha)
+            gl.glVertex2f(screen_rect[0], y)
+            gl.glVertex2f(screen_rect[0] + screen_rect[2], y)
+        gl.glEnd()
+
+        noise_alpha = 0.03 + 0.04 * math.sin(self._elapsed * 20.0)
+        gl.glColor4f(1.0, 1.0, 1.0, noise_alpha)
+        gl.glBegin(gl.GL_QUADS)
+        gl.glVertex2f(screen_rect[0], screen_rect[1])
+        gl.glVertex2f(screen_rect[0] + screen_rect[2], screen_rect[1])
+        gl.glVertex2f(screen_rect[0] + screen_rect[2], screen_rect[1] + screen_rect[3])
+        gl.glVertex2f(screen_rect[0], screen_rect[1] + screen_rect[3])
+        gl.glEnd()
+
+    def _draw_scene2_window(self, scene_time: float) -> None:
+        width, height = self._viewport_size
+        window_width = width * 0.26
+        window_height = height * 0.38
+        window_x = width * 0.68
+        window_y = height * 0.18
+
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.2, 0.16, 0.12, 1.0)
+        gl.glVertex2f(window_x - 10, window_y - 10)
+        gl.glVertex2f(window_x + window_width + 10, window_y - 10)
+        gl.glVertex2f(window_x + window_width + 10, window_y + window_height + 10)
+        gl.glVertex2f(window_x - 10, window_y + window_height + 10)
+        gl.glEnd()
+
+        inner_x = window_x
+        inner_y = window_y
+        inner_w = window_width
+        inner_h = window_height
+
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.04, 0.07, 0.13, 1.0)
+        gl.glVertex2f(inner_x, inner_y)
+        gl.glVertex2f(inner_x + inner_w, inner_y)
+        gl.glColor4f(0.01, 0.02, 0.05, 1.0)
+        gl.glVertex2f(inner_x + inner_w, inner_y + inner_h)
+        gl.glVertex2f(inner_x, inner_y + inner_h)
+        gl.glEnd()
+
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.0, 0.0, 0.0, 0.5)
+        gl.glVertex2f(inner_x, inner_y + inner_h * 0.7)
+        gl.glVertex2f(inner_x + inner_w, inner_y + inner_h * 0.7)
+        gl.glVertex2f(inner_x + inner_w, inner_y + inner_h)
+        gl.glVertex2f(inner_x, inner_y + inner_h)
+        gl.glEnd()
+
+        gl.glBegin(gl.GL_LINES)
+        gl.glColor4f(0.28, 0.22, 0.18, 1.0)
+        gl.glVertex2f(inner_x + inner_w / 2, inner_y)
+        gl.glVertex2f(inner_x + inner_w / 2, inner_y + inner_h)
+        gl.glVertex2f(inner_x, inner_y + inner_h / 2)
+        gl.glVertex2f(inner_x + inner_w, inner_y + inner_h / 2)
+        gl.glEnd()
+
+        meteor_time = scene_time - (self.SCENE2_TV_FOCUS_DURATION + self.SCENE2_PAN_DELAY)
+        if meteor_time > 0.0:
+            flight_duration = self.SCENE2_WINDOW_PAN_DURATION * 0.85
+            flight_progress = self._clamp01(
+                meteor_time / max(0.001, flight_duration)
+            )
+            meteor_x = inner_x + inner_w * (0.95 - 0.8 * flight_progress)
+            meteor_y = inner_y + inner_h * (0.05 + 0.85 * flight_progress)
+            tail_dx = -inner_w * 0.15
+            tail_dy = -inner_h * 0.08
+            gl.glBegin(gl.GL_LINES)
+            gl.glColor4f(1.0, 0.72, 0.25, 0.9)
+            gl.glVertex2f(meteor_x, meteor_y)
+            gl.glVertex2f(meteor_x - tail_dx, meteor_y - tail_dy)
+            gl.glEnd()
+
+            gl.glBegin(gl.GL_TRIANGLE_FAN)
+            gl.glColor4f(1.0, 0.8, 0.3, 0.8)
+            gl.glVertex2f(meteor_x, meteor_y)
+            for angle in range(0, 361, 45):
+                rad = math.radians(angle)
+                gl.glVertex2f(
+                    meteor_x + math.cos(rad) * width * 0.01,
+                    meteor_y + math.sin(rad) * width * 0.01,
+                )
+            gl.glEnd()
+
+        flash_intensity = self._scene2_flash_strength(scene_time)
+        if flash_intensity > 0.0:
+            gl.glBegin(gl.GL_QUADS)
+            gl.glColor4f(1.0, 0.55, 0.12, 0.4 + 0.5 * flash_intensity)
+            gl.glVertex2f(inner_x, inner_y)
+            gl.glVertex2f(inner_x + inner_w, inner_y)
+            gl.glColor4f(1.0, 0.65, 0.2, 0.6 * flash_intensity)
+            gl.glVertex2f(inner_x + inner_w, inner_y + inner_h)
+            gl.glVertex2f(inner_x, inner_y + inner_h)
+            gl.glEnd()
+
+    def _draw_scene2_portrait_reporter(self, rect: Tuple[float, float, float, float], chatter: float) -> None:
+        x, y, w, h = rect
+        face_center = (x + w * 0.58, y + h * 0.45)
+        radius = w * 0.18
+
+        gl.glBegin(gl.GL_TRIANGLE_FAN)
+        gl.glColor4f(0.72, 0.28, 0.42, 0.95)
+        gl.glVertex2f(face_center[0], face_center[1])
+        for angle in range(0, 361, 15):
+            rad = math.radians(angle)
+            offset = 1.0 + 0.2 * math.sin(angle * 2.0)
+            gl.glVertex2f(
+                face_center[0] - radius * 0.3 + math.cos(rad) * radius * 1.15,
+                face_center[1] + math.sin(rad) * radius * 1.25 * offset,
+            )
+        gl.glEnd()
+
+        gl.glBegin(gl.GL_TRIANGLE_FAN)
+        gl.glColor4f(0.98, 0.85, 0.78, 1.0)
+        gl.glVertex2f(face_center[0], face_center[1])
+        for angle in range(0, 361, 12):
+            rad = math.radians(angle)
+            gl.glVertex2f(
+                face_center[0] + math.cos(rad) * radius,
+                face_center[1] + math.sin(rad) * radius * 1.1,
+            )
+        gl.glEnd()
+
+        shoulder_y = y + h * 0.75
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.55, 0.35, 0.6, 1.0)
+        gl.glVertex2f(x + w * 0.25, shoulder_y)
+        gl.glVertex2f(x + w * 0.9, shoulder_y)
+        gl.glVertex2f(x + w * 0.9, shoulder_y + h * 0.2)
+        gl.glVertex2f(x + w * 0.25, shoulder_y + h * 0.2)
+        gl.glEnd()
+
+        gl.glBegin(gl.GL_LINES)
+        gl.glColor4f(0.2, 0.08, 0.06, 1.0)
+        eye_y = face_center[1] - radius * 0.15
+        eye_x = face_center[0] + radius * 0.2
+        gl.glVertex2f(eye_x - radius * 0.1, eye_y)
+        gl.glVertex2f(eye_x + radius * 0.05, eye_y - radius * 0.05)
+        gl.glVertex2f(eye_x - radius * 0.35, eye_y + radius * 0.02)
+        gl.glVertex2f(eye_x - radius * 0.18, eye_y - radius * 0.04)
+        gl.glEnd()
+
+        mouth_height = radius * 0.05 + chatter * radius * 0.08
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.8, 0.2, 0.3, 1.0)
+        gl.glVertex2f(face_center[0] - radius * 0.1, face_center[1] + radius * 0.25)
+        gl.glVertex2f(face_center[0] + radius * 0.15, face_center[1] + radius * 0.2)
+        gl.glVertex2f(
+            face_center[0] + radius * 0.15,
+            face_center[1] + radius * 0.2 + mouth_height,
+        )
+        gl.glVertex2f(
+            face_center[0] - radius * 0.1,
+            face_center[1] + radius * 0.25 + mouth_height,
+        )
+        gl.glEnd()
+
+    def _draw_scene2_portrait_host(self, rect: Tuple[float, float, float, float], chatter: float) -> None:
+        x, y, w, h = rect
+        face_center = (x + w * 0.42, y + h * 0.46)
+        radius = w * 0.2
+
+        gl.glBegin(gl.GL_TRIANGLE_FAN)
+        gl.glColor4f(0.82, 0.82, 0.88, 0.95)
+        gl.glVertex2f(face_center[0], face_center[1] - radius * 0.1)
+        for angle in range(0, 361, 15):
+            rad = math.radians(angle)
+            gl.glVertex2f(
+                face_center[0] + math.cos(rad) * radius * 1.2,
+                face_center[1] + math.sin(rad) * radius * 0.8,
+            )
+        gl.glEnd()
+
+        gl.glBegin(gl.GL_TRIANGLE_FAN)
+        gl.glColor4f(0.9, 0.82, 0.74, 1.0)
+        gl.glVertex2f(face_center[0], face_center[1])
+        for angle in range(0, 361, 12):
+            rad = math.radians(angle)
+            gl.glVertex2f(
+                face_center[0] + math.cos(rad) * radius * 0.95,
+                face_center[1] + math.sin(rad) * radius * 1.05,
+            )
+        gl.glEnd()
+
+        suit_y = y + h * 0.78
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.12, 0.16, 0.22, 1.0)
+        gl.glVertex2f(x + w * 0.05, suit_y)
+        gl.glVertex2f(x + w * 0.82, suit_y)
+        gl.glVertex2f(x + w * 0.82, suit_y + h * 0.22)
+        gl.glVertex2f(x + w * 0.05, suit_y + h * 0.22)
+        gl.glEnd()
+
+        gl.glBegin(gl.GL_TRIANGLES)
+        gl.glColor4f(0.85, 0.85, 0.9, 1.0)
+        gl.glVertex2f(x + w * 0.28, suit_y)
+        gl.glVertex2f(x + w * 0.45, suit_y)
+        gl.glVertex2f(x + w * 0.36, suit_y - h * 0.15)
+        gl.glEnd()
+
+        gl.glBegin(gl.GL_LINES)
+        gl.glColor4f(0.18, 0.08, 0.05, 1.0)
+        eye_y = face_center[1] - radius * 0.18
+        gl.glVertex2f(face_center[0] - radius * 0.05, eye_y)
+        gl.glVertex2f(face_center[0] + radius * 0.1, eye_y + radius * 0.02)
+        gl.glVertex2f(face_center[0] - radius * 0.28, eye_y + radius * 0.04)
+        gl.glVertex2f(face_center[0] - radius * 0.12, eye_y + radius * 0.02)
+        gl.glEnd()
+
+        moustache_height = h * 0.01 + chatter * h * 0.01
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.3, 0.2, 0.15, 1.0)
+        gl.glVertex2f(face_center[0] - radius * 0.25, face_center[1] + radius * 0.15)
+        gl.glVertex2f(face_center[0] - radius * 0.05, face_center[1] + radius * 0.1)
+        gl.glVertex2f(
+            face_center[0] - radius * 0.05,
+            face_center[1] + radius * 0.1 + moustache_height,
+        )
+        gl.glVertex2f(
+            face_center[0] - radius * 0.25,
+            face_center[1] + radius * 0.15 + moustache_height,
+        )
+        gl.glEnd()
+
+        mouth_width = radius * 0.2
+        gl.glBegin(gl.GL_QUADS)
+        gl.glColor4f(0.7, 0.2, 0.25, 1.0)
+        gl.glVertex2f(face_center[0] - mouth_width, face_center[1] + radius * 0.2)
+        gl.glVertex2f(face_center[0] - mouth_width * 0.2, face_center[1] + radius * 0.18)
+        gl.glVertex2f(
+            face_center[0] - mouth_width * 0.2,
+            face_center[1] + radius * 0.18 + chatter * radius * 0.1,
+        )
+        gl.glVertex2f(
+            face_center[0] - mouth_width,
+            face_center[1] + radius * 0.2 + chatter * radius * 0.1,
+        )
+        gl.glEnd()
+
+    def _draw_scene2_fade_overlay(self, scene_time: float) -> None:
+        fade_in = 1.0 - min(1.0, scene_time / self.SCENE2_FADE_IN_DURATION)
+        outro_start = self.SCENE2_TOTAL_DURATION - self.SCENE2_OUTRO_DURATION
+        fade_out = 0.0
+        if scene_time > outro_start:
+            fade_out = min(
+                1.0,
+                (scene_time - outro_start)
+                / max(0.001, self.SCENE2_OUTRO_DURATION),
+            )
+        fade_amount = max(fade_in, fade_out)
         if fade_amount <= 0.0:
             return
         width, height = self._viewport_size
@@ -839,11 +1416,54 @@ class OpeningSceneCutscene:
 
     # ------------------------------------------------------------------
     # Utilities
-    def _zoom_progress(self) -> float:
-        t = self._elapsed - (self.FADE_IN_DURATION + self.LINGER_DURATION)
+    def _scene1_zoom_progress(self) -> float:
+        t = self._elapsed - (
+            self.SCENE1_FADE_IN_DURATION + self.SCENE1_LINGER_DURATION
+        )
         if t <= 0.0:
             return 0.0
-        return max(0.0, min(1.0, t / self.ZOOM_DURATION))
+        return max(0.0, min(1.0, t / self.SCENE1_ZOOM_DURATION))
+
+    def _scene2_zoom_progress(self, scene_time: float) -> float:
+        if scene_time <= 0.0:
+            return 0.0
+        return max(0.0, min(1.0, scene_time / self.SCENE2_TV_FOCUS_DURATION))
+
+    def _scene2_pan_progress(self, scene_time: float) -> float:
+        pan_time = scene_time - (self.SCENE2_TV_FOCUS_DURATION + self.SCENE2_PAN_DELAY)
+        if pan_time <= 0.0:
+            return 0.0
+        return max(0.0, min(1.0, pan_time / self.SCENE2_WINDOW_PAN_DURATION))
+
+    def _scene2_flash_strength(self, scene_time: float) -> float:
+        flash_start = (
+            self.SCENE2_TV_FOCUS_DURATION
+            + self.SCENE2_PAN_DELAY
+            + self.SCENE2_WINDOW_PAN_DURATION * 0.85
+        )
+        if scene_time <= flash_start:
+            return 0.0
+        normalized = (scene_time - flash_start) / max(0.001, self.SCENE2_FLASH_DURATION)
+        if normalized <= 0.0:
+            return 0.0
+        rise = min(1.0, normalized * 2.2)
+        decay = max(0.0, 1.0 - max(0.0, normalized - 0.35))
+        return self._clamp01(rise * decay)
+
+    def _scene2_current_speaker(self, tv_time: float) -> Tuple[int, float]:
+        interval = self.SCENE2_SWITCH_INTERVAL
+        max_switch_time = self.SCENE2_INTERVIEW_SWITCHES * interval
+        if tv_time >= max_switch_time:
+            switch_index = self.SCENE2_INTERVIEW_SWITCHES
+            time_in_segment = min(interval, tv_time - max_switch_time)
+        else:
+            switch_index = int(tv_time // interval)
+            time_in_segment = tv_time - switch_index * interval
+        switch_index = min(switch_index, self.SCENE2_INTERVIEW_SWITCHES)
+        talk_phase = time_in_segment / max(0.001, interval)
+        talk_phase = self._clamp01(talk_phase)
+        speaker_index = switch_index % 2
+        return speaker_index, talk_phase
 
     def _generate_starfield(self, count: int) -> List[Star]:
         stars: List[Star] = []
