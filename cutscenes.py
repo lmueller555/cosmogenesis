@@ -618,8 +618,6 @@ class ForestTree:
 
     position: Vec2  # normalized (0-1) clearing coordinates
     height: float
-    sway_speed: float
-    sway_amplitude: float
 
 
 @dataclass
@@ -792,9 +790,7 @@ class OpeningSceneCutscene:
         faces: List[Tuple[Sequence[Vec3], Tuple[float, float, float], float, Tuple[float, float, float, float]]] = []
         for tree in self._trees:
             depth = tree.position[1]
-            sway = math.sin(self._elapsed * tree.sway_speed + tree.height)
-            sway *= tree.sway_amplitude * 120.0 * (1.0 - depth * 0.4)
-            base_x = (tree.position[0] - 0.5) * 10.0 + sway
+            base_x = (tree.position[0] - 0.5) * 10.0
             base_z = -1.8 + depth * 7.5
             trunk_height = 2.4 * tree.height
             trunk_center = (base_x, trunk_height * 0.5, base_z)
@@ -1561,8 +1557,6 @@ class OpeningSceneCutscene:
                 ForestTree(
                     position=(x, random.random()),
                     height=random.uniform(0.85, 1.15),
-                    sway_speed=random.uniform(0.3, 0.8),
-                    sway_amplitude=random.uniform(0.01, 0.04),
                 )
             )
         return trees
