@@ -249,20 +249,20 @@ class TitleScreen:
             gl.glVertex2f(button.rect.right - 1, button.rect.bottom - 1)
             gl.glVertex2f(button.rect.left + 1, button.rect.bottom - 1)
             gl.glEnd()
-            text_y = button.rect.centery - self._button_font.get_height() * 0.5
             self._draw_text_centered(
                 button.rect.centerx,
-                text_y,
+                button.rect.centery,
                 button.label,
                 self._button_font,
             )
 
     def _draw_text_centered(
-        self, center_x: float, y: float, text: str, font: pygame.font.Font
+        self, center_x: float, center_y: float, text: str, font: pygame.font.Font
     ) -> None:
         surface = font.render(text, True, (230, 235, 255))
         data = pygame.image.tostring(surface, "RGBA", True)
         x = center_x - surface.get_width() * 0.5
+        y = center_y - surface.get_height() * 0.5
         gl.glRasterPos2f(x, y)
         gl.glDrawPixels(
             surface.get_width(),
