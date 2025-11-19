@@ -638,6 +638,10 @@ class OpeningSceneCutscene:
         self._stars: List[Star] = self._generate_starfield(250)
         self._trees: List[ForestTree] = self._generate_trees(45)
         self._camera_jitter_phase = random.random() * math.tau
+        self._flicker_offsets = (
+            random.random() * math.tau,
+            random.random() * math.tau,
+        )
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -735,11 +739,11 @@ class OpeningSceneCutscene:
         for tree in sorted(self._trees, key=lambda t: t.position[1]):
             depth = tree.position[1]
             sway = math.sin(self._elapsed * tree.sway_speed + tree.height) * tree.sway_amplitude
-            scale = 0.35 + depth * 0.65
-            tree_height = tree.height * scale
+            scale = 0.6 + depth * 0.4
+            tree_height = height * 0.85 * tree.height * scale
             base_x = (tree.position[0] - 0.5) * width * 0.9 + width / 2 + sway * 8.0 * (1.0 - depth)
             base_y = horizon + depth * (height - horizon) * 0.35
-            crown_width = tree_height * 0.45
+            crown_width = tree_height * 0.38
 
             gl.glBegin(gl.GL_QUADS)
             trunk_color = 0.08 + 0.25 * depth
@@ -787,7 +791,11 @@ class OpeningSceneCutscene:
         gl.glVertex2f(base_x + house_width / 2 + 20.0, base_y - house_height)
         gl.glEnd()
 
-        flicker = 0.6 + 0.4 * math.sin(self._elapsed * 7.0)
+        flicker = 0.65
+        flicker += 0.25 * math.sin(self._elapsed * 8.7 + self._flicker_offsets[0])
+        flicker += 0.15 * math.sin(self._elapsed * 15.3 + self._flicker_offsets[1])
+        flicker += 0.1 * math.sin(self._elapsed * 24.1 + self._camera_jitter_phase * 0.5)
+        flicker = self._clamp01(flicker)
         window_color = (0.1 * flicker, 0.3 * flicker, 0.9 * flicker, 0.9)
         window_width = house_width * 0.18
         window_height = house_height * 0.3
@@ -852,11 +860,14 @@ class OpeningSceneCutscene:
 
     def _generate_trees(self, count: int) -> List[ForestTree]:
         trees: List[ForestTree] = []
-        for _ in range(count):
+        while len(trees) < count:
+            x = random.uniform(0.08, 0.92)
+            if abs(x - 0.5) < 0.18:
+                continue  # Leave a clearing around the house footprint.
             trees.append(
                 ForestTree(
-                    position=(random.uniform(0.1, 0.9), random.random()),
-                    height=random.uniform(110.0, 200.0),
+                    position=(x, random.random()),
+                    height=random.uniform(0.85, 1.15),
                     sway_speed=random.uniform(0.3, 0.8),
                     sway_amplitude=random.uniform(0.01, 0.04),
                 )
