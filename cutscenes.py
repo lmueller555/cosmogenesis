@@ -31,6 +31,21 @@ class CampaignOpeningCutscene:
     TOTAL_DURATION = FADE_IN_DURATION + EARTH_HOLD_DURATION + PAN_DURATION + 2.0
     MARS_REVEAL_DELAY = 2.5
 
+    EARTH_CONTINENT_BLOBS = (
+        # (angle in radians, lat center, angular width, strength)
+        (math.radians(-15.0), 0.35, 0.9, 0.95),  # North America analogue
+        (math.radians(70.0), 0.15, 0.7, 0.8),  # Europe / Africa analogue
+        (math.radians(170.0), -0.1, 0.8, 0.9),  # Asia
+        (math.radians(-120.0), -0.35, 0.65, 0.85),  # South America
+        (math.radians(120.0), -0.6, 0.55, 0.65),  # Australia like
+    )
+
+    MARS_ALBEDO_FEATURES = (
+        (math.radians(-35.0), 0.15, 0.9, 0.7),
+        (math.radians(65.0), -0.1, 0.7, 0.6),
+        (math.radians(150.0), -0.35, 1.0, 0.8),
+    )
+
     def __init__(self, viewport_size: Tuple[int, int]) -> None:
         pygame.font.init()
         self._viewport_size = viewport_size
@@ -142,16 +157,22 @@ class CampaignOpeningCutscene:
             angle = (index / segments) * math.tau
             normal = (math.cos(angle), math.sin(angle))
             shade = max(0.0, self._dot(normal, light_dir))
-            land_mask = 0.5 + 0.5 * math.sin(angle * 3.7 + center[1] * 0.01)
-            ocean_color = (0.05, 0.15, 0.4)
-            land_color = (0.12, 0.45, 0.22)
-            cloud_factor = 0.15 + 0.1 * math.sin(angle * 6.0 + self._elapsed * 0.8)
-            r = ocean_color[0] * (1 - land_mask) + land_color[0] * land_mask
-            g = ocean_color[1] * (1 - land_mask) + land_color[1] * land_mask
-            b = ocean_color[2] * (1 - land_mask) + land_color[2] * land_mask
-            r += cloud_factor * 0.5
-            g += cloud_factor * 0.5
-            b += cloud_factor * 0.5
+            land_mask = self._earth_continent_mask(angle, normal[1])
+            ocean_color = (0.045, 0.14, 0.33)
+            land_color = (0.14, 0.46, 0.22)
+            tundra_color = (0.65, 0.75, 0.5)
+            polar_mix = max(0.0, 1.0 - abs(normal[1]) * 4.5)
+            base_r = self._lerp(ocean_color[0], land_color[0], land_mask)
+            base_g = self._lerp(ocean_color[1], land_color[1], land_mask)
+            base_b = self._lerp(ocean_color[2], land_color[2], land_mask)
+            base_r = self._lerp(base_r, tundra_color[0], polar_mix)
+            base_g = self._lerp(base_g, tundra_color[1], polar_mix)
+            base_b = self._lerp(base_b, tundra_color[2], polar_mix)
+
+            cloud_cover = self._earth_cloud_cover(angle, normal[1])
+            r = base_r + cloud_cover * 0.45
+            g = base_g + cloud_cover * 0.45
+            b = base_b + cloud_cover * 0.47
             brightness = 0.35 + 0.65 * shade
             gl.glColor4f(r * brightness, g * brightness, b * brightness, 1.0)
             gl.glVertex2f(
@@ -160,15 +181,35 @@ class CampaignOpeningCutscene:
             )
         gl.glEnd()
 
-        # Atmospheric glow
-        gl.glColor4f(0.3, 0.6, 1.0, 0.18)
-        gl.glBegin(gl.GL_LINE_LOOP)
-        for index in range(segments):
+        # Cloud wisps as a translucent overlay
+        gl.glBegin(gl.GL_TRIANGLE_FAN)
+        gl.glColor4f(1.0, 1.0, 1.0, 0.0)
+        gl.glVertex2f(*center)
+        for index in range(segments + 1):
             angle = (index / segments) * math.tau
+            normal = (math.cos(angle), math.sin(angle))
+            cover = self._earth_cloud_cover(angle * 1.07 + 0.4, normal[1] * 0.9)
+            cover *= 0.22 + 0.12 * math.sin(self._elapsed * 0.4 + angle * 2.0)
+            gl.glColor4f(1.0, 1.0, 1.0, cover)
             gl.glVertex2f(
-                center[0] + math.cos(angle) * radius * 1.04,
-                center[1] + math.sin(angle) * radius * 1.02,
+                center[0] + normal[0] * radius * 1.005,
+                center[1] + normal[1] * radius * 0.99,
             )
+        gl.glEnd()
+
+        # Atmospheric glow with thickness
+        gl.glBegin(gl.GL_TRIANGLE_STRIP)
+        for index in range(segments + 1):
+            angle = (index / segments) * math.tau
+            cos_a = math.cos(angle)
+            sin_a = math.sin(angle)
+            outer = 1.06
+            inner = 1.02
+            falloff = 0.2 + 0.15 * (1.0 - abs(sin_a))
+            gl.glColor4f(0.35, 0.65, 1.0, 0.02)
+            gl.glVertex2f(center[0] + cos_a * radius * inner, center[1] + sin_a * radius * inner)
+            gl.glColor4f(0.35, 0.75, 1.0, falloff)
+            gl.glVertex2f(center[0] + cos_a * radius * outer, center[1] + sin_a * radius * outer)
         gl.glEnd()
 
     def _draw_mars(self, center: Vec2, radius: float, visibility: float) -> None:
@@ -181,10 +222,16 @@ class CampaignOpeningCutscene:
             angle = (index / segments) * math.tau
             normal = (math.cos(angle), math.sin(angle))
             shade = max(0.0, self._dot(normal, light_dir))
-            dust_variation = 0.55 + 0.45 * math.sin(angle * 5.0 + self._elapsed * 0.6)
-            r = 0.55 * dust_variation
-            g = 0.2 * dust_variation
-            b = 0.1 + 0.05 * dust_variation
+            terrain = self._mars_albedo(angle, normal[1])
+            polar_cap = max(0.0, 1.0 - abs(normal[1]) * 5.5)
+            dust_storm = 0.15 + 0.15 * math.sin(angle * 7.0 + self._elapsed * 0.7)
+            r = terrain[0] + polar_cap * 0.35 + dust_storm * 0.4
+            g = terrain[1] + polar_cap * 0.25 + dust_storm * 0.25
+            b = terrain[2] + polar_cap * 0.2 + dust_storm * 0.2
+            canyon = 0.4 + 0.6 * math.sin(angle * 3.2 - 0.3)
+            canyon *= max(0.0, 1.0 - abs(normal[1] + 0.15) * 6.0)
+            r -= canyon * 0.1
+            g -= canyon * 0.05
             brightness = 0.25 + 0.75 * shade
             gl.glColor4f(r * brightness, g * brightness, b * brightness, visibility)
             gl.glVertex2f(
@@ -193,13 +240,22 @@ class CampaignOpeningCutscene:
             )
         gl.glEnd()
 
-        gl.glColor4f(0.85, 0.45, 0.2, 0.45 * visibility)
-        gl.glBegin(gl.GL_LINE_LOOP)
-        for index in range(segments):
+        # Thin Martian atmosphere
+        gl.glBegin(gl.GL_TRIANGLE_STRIP)
+        for index in range(segments + 1):
             angle = (index / segments) * math.tau
+            cos_a = math.cos(angle)
+            sin_a = math.sin(angle)
+            glow = 0.12 + 0.08 * (1.0 - abs(sin_a))
+            gl.glColor4f(0.95, 0.55, 0.25, 0.0)
             gl.glVertex2f(
-                center[0] + math.cos(angle) * radius * 1.05,
-                center[1] + math.sin(angle) * radius * 1.02,
+                center[0] + cos_a * radius * 1.01,
+                center[1] + sin_a * radius * 1.0,
+            )
+            gl.glColor4f(1.0, 0.7, 0.35, glow * visibility)
+            gl.glVertex2f(
+                center[0] + cos_a * radius * 1.08,
+                center[1] + sin_a * radius * 1.05,
             )
         gl.glEnd()
 
@@ -278,6 +334,59 @@ class CampaignOpeningCutscene:
         if length <= 0.0:
             return (0.0, 0.0)
         return (vec[0] / length, vec[1] / length)
+
+    # ------------------------------------------------------------------
+    # Planet surface helpers
+    def _earth_continent_mask(self, angle: float, lat: float) -> float:
+        mask = 0.0
+        for center_angle, center_lat, angular_width, strength in self.EARTH_CONTINENT_BLOBS:
+            ang_dist = self._wrapped_angle_distance(angle, center_angle)
+            lat_dist = abs(lat - center_lat)
+            ang_falloff = max(0.0, 1.0 - (ang_dist / angular_width) ** 2)
+            lat_falloff = max(0.0, 1.0 - (lat_dist / 0.55) ** 2)
+            mask += ang_falloff * lat_falloff * strength
+        return max(0.0, min(1.0, mask))
+
+    def _earth_cloud_cover(self, angle: float, lat: float) -> float:
+        equatorial_band = math.exp(-abs(lat) * 3.5)
+        rotating_pattern = 0.5 + 0.5 * math.sin(angle * 3.8 + self._elapsed * 0.65 + lat * 6.0)
+        turbulence = 0.5 + 0.5 * math.sin(angle * 6.2 - self._elapsed * 0.5)
+        cover = equatorial_band * rotating_pattern * 0.6 + turbulence * 0.25
+        return max(0.0, min(1.0, cover))
+
+    def _mars_albedo(self, angle: float, lat: float) -> Tuple[float, float, float]:
+        base = (0.55, 0.28, 0.15)
+        basalt = (0.35, 0.18, 0.13)
+        highlights = (0.78, 0.45, 0.22)
+        region_mix = 0.0
+        for center_angle, center_lat, angular_width, strength in self.MARS_ALBEDO_FEATURES:
+            ang_dist = self._wrapped_angle_distance(angle, center_angle)
+            lat_dist = abs(lat - center_lat)
+            ang_falloff = max(0.0, 1.0 - (ang_dist / angular_width) ** 2)
+            lat_falloff = max(0.0, 1.0 - (lat_dist / 0.75) ** 2)
+            region_mix += ang_falloff * lat_falloff * strength
+        region_mix = max(0.0, min(1.0, region_mix))
+        mix_color = (
+            self._lerp(base[0], basalt[0], region_mix),
+            self._lerp(base[1], basalt[1], region_mix * 0.7),
+            self._lerp(base[2], basalt[2], region_mix * 0.5),
+        )
+        highlight_factor = 0.4 + 0.6 * math.sin(angle * 2.0 + lat * 4.0)
+        mix_color = (
+            self._lerp(mix_color[0], highlights[0], highlight_factor * 0.15),
+            self._lerp(mix_color[1], highlights[1], highlight_factor * 0.15),
+            self._lerp(mix_color[2], highlights[2], highlight_factor * 0.15),
+        )
+        return mix_color
+
+    @staticmethod
+    def _lerp(a: float, b: float, t: float) -> float:
+        return a + (b - a) * max(0.0, min(1.0, t))
+
+    @staticmethod
+    def _wrapped_angle_distance(angle: float, reference: float) -> float:
+        distance = (angle - reference + math.pi) % math.tau - math.pi
+        return abs(distance)
 
 
 Cutscene = CampaignOpeningCutscene
