@@ -49,6 +49,12 @@ class CampaignOpeningCutscene:
         (math.radians(150.0), -0.35, 1.0, 0.8),
     )
 
+    # Shared scene-two room dimensions so the couch, TV, and window align
+    # precisely on their respective walls.
+    SCENE2_ROOM_WIDTH = 11.0
+    SCENE2_ROOM_DEPTH = 7.2
+    SCENE2_ROOM_HEIGHT = 4.2
+
     def __init__(self, viewport_size: Tuple[int, int]) -> None:
         pygame.font.init()
         self._viewport_size = viewport_size
@@ -940,9 +946,9 @@ class OpeningSceneCutscene:
     def _draw_scene2_room_base(self, scene_time: float, camera: SceneCamera) -> None:
         lamp_intensity = 0.35 + 0.25 * math.sin(scene_time * 2.0 + self._scene2_lamp_phase)
         lamp_intensity = self._clamp01(lamp_intensity)
-        room_width = 11.0
-        room_depth = 7.2
-        room_height = 4.2
+        room_width = self.SCENE2_ROOM_WIDTH
+        room_depth = self.SCENE2_ROOM_DEPTH
+        room_height = self.SCENE2_ROOM_HEIGHT
         front_z = 2.0
         back_z = -room_depth
         light_dir = self._normalized3((-0.2, -0.6, -0.8))
@@ -1013,6 +1019,39 @@ class OpeningSceneCutscene:
         ]
         faces.append((rug, (0.12, 0.07, 0.18), 0.85, (0.7, 0.45, 0.9, 0.6)))
 
+        # Baseboards along the walls reinforce depth cues for the living room.
+        baseboard_height = 0.22
+        baseboard_thickness = 0.08
+        depth_span = front_z - back_z
+        for x in (-room_width / 2 + baseboard_thickness / 2, room_width / 2 - baseboard_thickness / 2):
+            center = (x, baseboard_height / 2, (front_z + back_z) / 2)
+            self._append_prism_faces(
+                faces,
+                center,
+                (baseboard_thickness, baseboard_height, depth_span),
+                (0.22, 0.18, 0.14),
+                (0.6, 0.5, 0.4, 0.85),
+                0.9,
+            )
+        center = (0.0, baseboard_height / 2, back_z + baseboard_thickness / 2)
+        self._append_prism_faces(
+            faces,
+            center,
+            (room_width, baseboard_height, baseboard_thickness),
+            (0.2, 0.16, 0.12),
+            (0.55, 0.45, 0.35, 0.85),
+            0.9,
+        )
+
+        # An accent panel behind the TV makes the centered screen feel anchored.
+        panel = [
+            (-1.8, room_height * 0.92, back_z + 0.01),
+            (1.8, room_height * 0.92, back_z + 0.01),
+            (1.8, 0.6, back_z + 0.01),
+            (-1.8, 0.6, back_z + 0.01),
+        ]
+        faces.append((panel, (0.1, 0.12, 0.18), 0.8, (0.45, 0.5, 0.65, 0.55)))
+
         frame_height = 1.4
         frame_width = 0.9
         for index in range(3):
@@ -1034,8 +1073,14 @@ class OpeningSceneCutscene:
             Tuple[Sequence[Vec3], Tuple[float, float, float], float, Tuple[float, float, float, float]]
         ] = []
 
-        sofa_center = (-3.2, 0.9, -0.4)
-        sofa_size = (3.6, 1.1, 1.5)
+        room_width = self.SCENE2_ROOM_WIDTH
+        sofa_depth_offset = -0.6
+        sofa_size = (4.2, 1.1, 1.6)
+        sofa_center = (
+            -room_width / 2 + sofa_size[0] / 2 + 0.15,
+            0.9,
+            sofa_depth_offset,
+        )
         self._append_prism_faces(
             faces,
             sofa_center,
@@ -1044,8 +1089,8 @@ class OpeningSceneCutscene:
             (0.5, 0.7, 0.85, 0.85),
             0.95,
         )
-        back_center = (-3.2, 1.6, -0.9)
-        back_size = (3.6, 1.2, 0.4)
+        back_center = (sofa_center[0], 1.65, sofa_depth_offset - sofa_size[2] / 2 + 0.15)
+        back_size = (sofa_size[0], 1.15, 0.45)
         self._append_prism_faces(
             faces,
             back_center,
@@ -1060,7 +1105,11 @@ class OpeningSceneCutscene:
             (0.6, 0.75, 0.9),
         )
         for index, color in enumerate(cushion_colors):
-            center = (-4.2 + index * 1.4, 1.4, -0.4)
+            center = (
+                sofa_center[0] - sofa_size[0] / 2 + 1.2 + index * 1.4,
+                1.4,
+                sofa_depth_offset + 0.1,
+            )
             size = (0.9, 0.5, 0.4)
             self._append_prism_faces(
                 faces,
@@ -1071,8 +1120,8 @@ class OpeningSceneCutscene:
                 0.9,
             )
 
-        table_center = (1.6, 0.5, 0.2)
-        table_size = (2.3, 0.4, 1.2)
+        table_center = (1.4, 0.5, -0.3)
+        table_size = (2.4, 0.4, 1.3)
         self._append_prism_faces(
             faces,
             table_center,
@@ -1092,7 +1141,7 @@ class OpeningSceneCutscene:
                 0.9,
             )
 
-        vase_center = (1.6, 1.0, -0.2)
+        vase_center = (1.35, 1.0, -0.45)
         self._append_prism_faces(
             faces,
             vase_center,
@@ -1115,11 +1164,12 @@ class OpeningSceneCutscene:
 
     def _draw_scene2_tv(self, scene_time: float, camera: SceneCamera) -> None:
         light_dir = self._normalized3((-0.15, -0.7, -0.3))
+        room_depth = self.SCENE2_ROOM_DEPTH
         faces: List[
             Tuple[Sequence[Vec3], Tuple[float, float, float], float, Tuple[float, float, float, float]]
         ] = []
-        tv_center = (0.7, 1.4, -3.4)
-        tv_size = (3.2, 1.8, 0.5)
+        tv_center = (0.0, 1.45, -room_depth + 0.35)
+        tv_size = (3.3, 1.85, 0.5)
         self._append_prism_faces(
             faces,
             tv_center,
@@ -1129,18 +1179,18 @@ class OpeningSceneCutscene:
             0.95,
         )
 
-        stand_center = (0.7, 0.6, -3.45)
+        stand_center = (0.0, 0.55, tv_center[2] - 0.05)
         self._append_prism_faces(
             faces,
             stand_center,
-            (1.2, 0.3, 0.7),
+            (2.2, 0.35, 0.9),
             (0.04, 0.04, 0.05),
             (0.5, 0.5, 0.6, 0.8),
             0.9,
         )
 
-        screen_width = 2.5
-        screen_height = 1.3
+        screen_width = 2.7
+        screen_height = 1.35
         screen_z = tv_center[2] + tv_size[2] / 2 + 0.02
         screen_vertices = [
             (tv_center[0] - screen_width / 2, tv_center[1] + screen_height / 2, screen_z),
@@ -1188,9 +1238,14 @@ class OpeningSceneCutscene:
 
     def _draw_scene2_window(self, scene_time: float, camera: SceneCamera) -> None:
         light_dir = self._normalized3((-0.1, -0.5, -0.9))
-        room_depth = 7.2
-        window_center = (3.4, 2.1, -room_depth + 0.1)
+        room_depth = self.SCENE2_ROOM_DEPTH
+        room_width = self.SCENE2_ROOM_WIDTH
         window_size = (2.8, 3.0)
+        window_center = (
+            room_width / 2 - window_size[0] / 2 - 0.35,
+            2.0,
+            -room_depth + 0.2,
+        )
         frame_depth = 0.25
         faces: List[
             Tuple[Sequence[Vec3], Tuple[float, float, float], float, Tuple[float, float, float, float]]
@@ -1482,7 +1537,7 @@ class OpeningSceneCutscene:
             base_pos[1] + math.sin(self._elapsed * 0.3) * 0.05,
             base_pos[2] - zoom * 2.0,
         )
-        target = (0.5 + pan * 0.6, 1.3, -2.5)
+        target = (0.0 + pan * 2.4, 1.3, -2.8)
         return SceneCamera(position=position, target=target, fov=math.radians(50.0))
 
     def _scene1_zoom_progress(self) -> float:
